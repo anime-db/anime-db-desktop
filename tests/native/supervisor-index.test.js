@@ -48,6 +48,11 @@ jest.mock('../../native/supervisor/source-urls-check', () => ({
 jest.mock('../../native/supervisor/market-refresh', () => ({
     run: jest.fn(() => Promise.resolve()),
 }));
+jest.mock('../../native/supervisor/plugins-install-selected', () => ({
+    COMMAND:      'app:plugins:install-selected',
+    hasSelection: jest.fn(() => false),
+    run:          jest.fn(() => Promise.resolve([])),
+}));
 jest.mock('../../native/supervisor/meilisearch', () => ({
     start:      jest.fn(),
     stop:       jest.fn(() => Promise.resolve()),
@@ -123,6 +128,7 @@ const oauthCallback     = require('../../native/supervisor/oauth-callback');
 const phpCommand        = require('../../native/supervisor/php-command');
 const pluginReconcile   = require('../../native/supervisor/plugin-reconcile');
 const pluginsConsumer   = require('../../native/supervisor/plugins-consumer');
+const pluginsInstallSelected = require('../../native/supervisor/plugins-install-selected');
 const qbittorrent       = require('../../native/supervisor/qbittorrent');
 const safeModeState     = require('../../native/supervisor/safe-mode');
 const searchReindex     = require('../../native/supervisor/search-reindex');
@@ -147,6 +153,8 @@ describe('supervisor.start', () => {
         searchReindex.consumeRequired.mockReturnValue(false);
         pluginReconcile.run.mockResolvedValue(undefined);
         marketRefresh.run.mockResolvedValue(undefined);
+        pluginsInstallSelected.hasSelection.mockReturnValue(false);
+        pluginsInstallSelected.run.mockResolvedValue([]);
         downloadsPoll.run.mockResolvedValue(undefined);
         sourceUrlsCheck.run.mockResolvedValue(undefined);
         migrations.run.mockResolvedValue(undefined);
@@ -797,6 +805,15 @@ describe('supervisor.start', () => {
             expect(pluginsConsumer.start).toHaveBeenCalledWith(expect.objectContaining({ safeMode: true }));
         });
 
+        test('does not install the installer-selected plugins in safe mode', async () => {
+            pluginsInstallSelected.hasSelection.mockReturnValue(true);
+
+            await supervisor.start(jest.fn(), { safeMode: true });
+            await new Promise((resolve) => setImmediate(resolve));
+
+            expect(pluginsInstallSelected.run).not.toHaveBeenCalled();
+        });
+
         test('defaults to safeMode:false when no options are given', async () => {
             await supervisor.start(jest.fn());
 
@@ -1008,6 +1025,197 @@ describe('supervisor.reloadForPlugin (issue #411)', () => {
         // One run for plugin-a (the in-flight one) plus one coalesced run for plugin-c (the
         // latest queued id) — plugin-b's own request never gets its own run.
         expect(frankenphp.start).toHaveBeenCalledTimes(2);
+    });
+});
+
+// Installer-selected plugins: the app installs what the installer's selection file lists (the
+// command does not publish workers.reload), and the supervisor activates the whole batch itself.
+describe('plugins chosen in the installer', () => {
+    const flush = () => new Promise((resolve) => { setImmediate(resolve); });
+
+    beforeEach(() => {
+        cacheInvalidation.hasBuildChanged.mockReturnValue(false);
+        cacheInvalidation.invalidateCache.mockImplementation(() => {});
+        cacheInvalidation.commitFingerprint.mockImplementation(() => {});
+        safeModeState.hasModeChanged.mockReturnValue(false);
+        safeModeState.commitStartSuccess.mockImplementation(() => {});
+        frankenphp.start.mockResolvedValue({ httpPort: 8000, wsPort: 8001 });
+        frankenphp.stop.mockResolvedValue(undefined);
+        messengerConsumer.start.mockResolvedValue(undefined);
+        messengerConsumer.stop.mockResolvedValue(undefined);
+        pluginsConsumer.start.mockResolvedValue(undefined);
+        pluginsConsumer.stop.mockResolvedValue(undefined);
+        meilisearch.start.mockResolvedValue({ port: 7700, key: 'k', wiped: false });
+        searchReindex.run.mockResolvedValue(undefined);
+        searchReindex.consumeRequired.mockReturnValue(false);
+        migrations.run.mockResolvedValue(undefined);
+        marketRefresh.run.mockResolvedValue(undefined);
+        phpCommand.run.mockResolvedValue(undefined);
+        pluginsInstallSelected.hasSelection.mockReturnValue(false);
+        pluginsInstallSelected.run.mockResolvedValue([]);
+    });
+
+    afterEach(async () => {
+        await supervisor.stop();
+        jest.useRealTimers();
+        jest.clearAllMocks();
+    });
+
+    test('kills an orphaned install-selected process on start', async () => {
+        await supervisor.start(jest.fn());
+
+        expect(phpCommand.killOrphan).toHaveBeenCalledWith('app:plugins:install-selected');
+    });
+
+    test('does not run the command without the selection file', async () => {
+        await supervisor.start(jest.fn());
+        await flush();
+
+        expect(pluginsInstallSelected.run).not.toHaveBeenCalled();
+    });
+
+    test('runs the command only after the startup market refresh finished and the live context is set', async () => {
+        pluginsInstallSelected.hasSelection.mockReturnValue(true);
+        let finishRefresh;
+        marketRefresh.run.mockImplementation(() => new Promise((resolve) => { finishRefresh = resolve; }));
+
+        await supervisor.start(jest.fn());
+        await flush();
+
+        // start() has resolved (the live context exists) but the snapshot is still being built.
+        expect(pluginsInstallSelected.run).not.toHaveBeenCalled();
+
+        finishRefresh();
+        await flush();
+
+        expect(pluginsInstallSelected.run).toHaveBeenCalledTimes(1);
+        expect(pluginsInstallSelected.run).toHaveBeenCalledWith(expect.objectContaining({ appPort: 8000 }));
+    });
+
+    test('does not delay start() while the command is running', async () => {
+        pluginsInstallSelected.hasSelection.mockReturnValue(true);
+        let finish;
+        pluginsInstallSelected.run.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+
+        await expect(supervisor.start(jest.fn())).resolves.toMatchObject({ frankenphpPort: 8000 });
+        await flush();
+        finish([]);
+    });
+
+    test('restarts exactly once for N installed plugins and emits plugin-activated for each', async () => {
+        pluginsInstallSelected.hasSelection.mockReturnValue(true);
+        pluginsInstallSelected.run.mockResolvedValue(['animedb-a', 'animedb-b', 'animedb-c']);
+        const activated = jest.fn();
+        supervisor.events.on('plugin-activated', activated);
+
+        await supervisor.start(jest.fn());
+        await flush();
+        await flush();
+        supervisor.events.off('plugin-activated', activated);
+
+        expect(frankenphp.start).toHaveBeenCalledTimes(2); // start() + the single batch restart
+        expect(phpCommand.run).not.toHaveBeenCalled();
+        expect(activated.mock.calls.map(([arg]) => arg.pluginId)).toEqual(['animedb-a', 'animedb-b', 'animedb-c']);
+    });
+
+    test('does not restart when the command installed nothing', async () => {
+        pluginsInstallSelected.hasSelection.mockReturnValue(true);
+        pluginsInstallSelected.run.mockResolvedValue([]);
+
+        await supervisor.start(jest.fn());
+        await flush();
+        await flush();
+
+        expect(pluginsInstallSelected.run).toHaveBeenCalledTimes(1);
+        expect(frankenphp.start).toHaveBeenCalledTimes(1); // start() only
+        expect(frankenphp.stop).not.toHaveBeenCalled();
+    });
+
+    test('rolls back every id of the batch when the restart fails', async () => {
+        pluginsInstallSelected.hasSelection.mockReturnValue(true);
+        pluginsInstallSelected.run.mockResolvedValue(['animedb-a', 'animedb-b', 'animedb-c']);
+        const failed = jest.fn();
+        supervisor.events.on('plugin-activation-failed', failed);
+
+        await supervisor.start(jest.fn());
+        // The batch restart (second start) fails, the rollback restart succeeds.
+        frankenphp.start.mockRejectedValueOnce(new Error('health check timed out'));
+        await flush();
+        await flush();
+        await flush();
+        supervisor.events.off('plugin-activation-failed', failed);
+
+        const deactivated = phpCommand.run.mock.calls.filter(([command]) => command === 'app:plugin:deactivate').map(([, args]) => args);
+        expect(deactivated).toEqual([['animedb-a'], ['animedb-b'], ['animedb-c']]);
+        expect(failed.mock.calls.map(([arg]) => arg.pluginId)).toEqual(['animedb-a', 'animedb-b', 'animedb-c']);
+    });
+
+    test('a workers.reload signal arriving during the batch activation runs after it, not alongside it', async () => {
+        pluginsInstallSelected.hasSelection.mockReturnValue(true);
+        pluginsInstallSelected.run.mockResolvedValue(['animedb-a', 'animedb-b']);
+        await supervisor.start(jest.fn());
+
+        let running = 0;
+        let maxRunning = 0;
+        const order = [];
+        let releaseBatchStart;
+        frankenphp.start.mockImplementation(() => {
+            running += 1;
+            maxRunning = Math.max(maxRunning, running);
+            order.push('start');
+            const done = () => { running -= 1; return { httpPort: 8000, wsPort: 8001 }; };
+            if (order.length === 1) {
+                return new Promise((resolve) => { releaseBatchStart = () => resolve(done()); });
+            }
+            return Promise.resolve(done());
+        });
+
+        await flush();
+        await flush();
+        // The batch restart is now blocked inside frankenphp.start().
+        const manual = supervisor.reloadForPlugin('animedb-manual');
+        await flush();
+        expect(order).toEqual(['start']);
+
+        releaseBatchStart();
+        await manual;
+
+        expect(order).toEqual(['start', 'start']);
+        expect(maxRunning).toBe(1);
+    });
+
+    test('retries every hour while the file exists and stops once it is gone', async () => {
+        jest.useFakeTimers();
+        pluginsInstallSelected.hasSelection.mockReturnValue(true);
+
+        await supervisor.start(jest.fn());
+        await jest.advanceTimersByTimeAsync(0);
+        expect(pluginsInstallSelected.run).toHaveBeenCalledTimes(1);
+
+        await jest.advanceTimersByTimeAsync(60 * 60 * 1000);
+        expect(pluginsInstallSelected.run).toHaveBeenCalledTimes(2);
+
+        await jest.advanceTimersByTimeAsync(60 * 60 * 1000);
+        expect(pluginsInstallSelected.run).toHaveBeenCalledTimes(3);
+
+        pluginsInstallSelected.hasSelection.mockReturnValue(false);
+        await jest.advanceTimersByTimeAsync(3 * 60 * 60 * 1000);
+        expect(pluginsInstallSelected.run).toHaveBeenCalledTimes(3);
+    });
+
+    test('a failing command run is only logged and the next tick retries', async () => {
+        jest.useFakeTimers();
+        const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        pluginsInstallSelected.hasSelection.mockReturnValue(true);
+        pluginsInstallSelected.run.mockRejectedValueOnce(new Error('exited with code 1')).mockResolvedValue([]);
+
+        await supervisor.start(jest.fn());
+        await jest.advanceTimersByTimeAsync(0);
+        await jest.advanceTimersByTimeAsync(60 * 60 * 1000);
+
+        expect(pluginsInstallSelected.run).toHaveBeenCalledTimes(2);
+        expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('[plugins-install-selected]'), 'exited with code 1');
+        errorSpy.mockRestore();
     });
 });
 

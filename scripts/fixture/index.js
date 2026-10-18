@@ -66,6 +66,7 @@ function envForDir(dir) {
         MARKET_REGISTRY_CACHE_PATH:   path.join(dir, 'market-registry-cache.json'),
         MARKET_SNAPSHOT_CACHE_PATH:   path.join(dir, 'market-snapshot-cache.json'),
         MARKET_REFRESH_LOCK_PATH:     path.join(dir, 'market-refresh.lock'),
+        INSTALLER_PLUGINS_PATH:       path.join(dir, 'installer-plugins.json'),
         BACKUPS_DIR:                  path.join(dir, 'backups'),
         // Symfony share_dir (the cache.app pool); app/.env points it into the project otherwise.
         APP_SHARE_DIR:                path.join(dir, 'share'),

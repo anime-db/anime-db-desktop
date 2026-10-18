@@ -110,6 +110,7 @@ function buildCommonEnv({ meiliPort, meiliKey, qbittorrentPort, appPort, oauthCa
         MARKET_REGISTRY_CACHE_PATH: paths.getMarketRegistryCachePath(),
         MARKET_SNAPSHOT_CACHE_PATH: paths.getMarketSnapshotCachePath(),
         MARKET_REFRESH_LOCK_PATH: paths.getMarketRefreshLockPath(),
+        INSTALLER_PLUGINS_PATH:  paths.getInstallerPluginsPath(),
         MEILISEARCH_URL:         `http://127.0.0.1:${meiliPort}`,
         MEILISEARCH_KEY:         meiliKey,
         QBITTORRENT_URL:         `http://127.0.0.1:${qbittorrentPort}`,

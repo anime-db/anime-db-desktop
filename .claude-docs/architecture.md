@@ -177,6 +177,16 @@ Windows.
 завершения, которые не проходят через `before-quit` (например `process.exit()` откуда-то ещё).
 `process.on('SIGTERM'/'SIGINT')` ведут туда же, куда и штатный выход из трея.
 
+### Плагины, выбранные в установщике
+
+Установщик пишет `userData/installer-plugins.json` (`{"plugins": [id, ...]}`), путь — `INSTALLER_PLUGINS_PATH`
+(`paths.getInstallerPluginsPath()`, параметр `app.installer_plugins_path` с `dev_default`; его же читает плашка
+на странице маркета). Супервизор после `liveContext` и стартового `market-refresh`, затем раз в час, пока файл
+существует, запускает `app:plugins:install-selected`: команда ставит каждый id через `MarketPluginInstaller`
+без `WORKERS_RELOAD_EVENT`, переписывает файл после каждого id (окончательные отказы убирает и логирует,
+временные оставляет) и печатает `{"installed": [...]}`. Если поставлено хоть что-то, супервизор делает один
+перезапуск на весь пакет через ту же очередь, что `reloadForPlugin` (`reloadForPlugins`), с откатом всех id.
+
 ## app/ — Symfony 8.1
 
 FrankenPHP стартует `public/index.php` в **worker mode** — PHP загружается один раз и остаётся в памяти.

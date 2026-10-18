@@ -187,6 +187,13 @@ parameters:
     app.market_refresh_lock_path.dev_default: '%kernel.project_dir%/var/market-refresh.lock'
     app.market_refresh_lock_path: '%env(default:app.market_refresh_lock_path.dev_default:MARKET_REFRESH_LOCK_PATH)%'
 
+    # The installer's plugin selection file (`{"plugins": [ids]}`): production Electron passes
+    # INSTALLER_PLUGINS_PATH (native/paths.js, native/supervisor/env.js) pointing at
+    # %AppData%/installer-plugins.json. Read by app:plugins:install-selected and by the market
+    # page's "still not installed" banner; it exists only while some selected plugins are pending.
+    app.installer_plugins_path.dev_default: '%kernel.project_dir%/var/installer-plugins.json'
+    app.installer_plugins_path: '%env(default:app.installer_plugins_path.dev_default:INSTALLER_PLUGINS_PATH)%'
+
     # In production Electron passes BACKUPS_DIR (see native/paths.js, native/supervisor/env.js),
     # pointing at %AppData%/backups/ — where native/supervisor/migrations.js writes pre-migration
     # (and, issue #681, pre-import) snapshots of data.db. App\Service\Backup\BackupListService
@@ -223,6 +230,7 @@ services:
             $cachePath: '%app.market_registry_cache_path%'
             $snapshotCachePath: '%app.market_snapshot_cache_path%'
             $refreshLockPath: '%app.market_refresh_lock_path%'
+            $installerPluginsPath: '%app.installer_plugins_path%'
             $oauthCallbackFixedPort: '%app.oauth_callback_fixed_port%'
 
     # AnimeDb\PluginContracts\Filler\FillerInterface/Search\SearchByPluginInterface/

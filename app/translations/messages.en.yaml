@@ -319,6 +319,7 @@ settings_market:
     install_success: 'Plugin "%pluginId%" has been installed.'
     update_button: Update
     update_success: 'Plugin "%pluginId%" has been updated. Its settings have been preserved.'
+    installer_pending: 'Plugins chosen in the installer are not installed yet and will be installed automatically: %plugins%.'
     registry_unavailable: The market catalog is not ready yet. It will appear after the next background refresh.
     install_error_registry_unavailable: The market catalog is not ready yet. Try again later.
     install_error_unknown_plugin: This plugin is no longer listed in the market catalog.

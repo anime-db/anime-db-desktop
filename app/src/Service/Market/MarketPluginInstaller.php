@@ -52,7 +52,7 @@ use App\Service\Plugin\ZipPluginInstaller;
  * {@see UnknownPluginVersionException} / {@see PluginAssetDownloadException} from the download, and
  * whatever {@see ZipPluginInstaller::install()} / {@see ZipPluginInstaller::update()} throw.
  */
-final class MarketPluginInstaller
+final class MarketPluginInstaller implements MarketPluginInstallerInterface
 {
     public function __construct(
         private readonly MarketSnapshotCache $snapshotCache,

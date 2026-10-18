@@ -111,6 +111,10 @@ test('getMarketSnapshotCachePath returns market-snapshot-cache.json inside userD
     expect(paths.getMarketSnapshotCachePath()).toBe(path.join(USER_DATA, 'market-snapshot-cache.json'));
 });
 
+test('getInstallerPluginsPath returns installer-plugins.json inside userData', () => {
+    expect(paths.getInstallerPluginsPath()).toBe(path.join(USER_DATA, 'installer-plugins.json'));
+});
+
 test('getMarketRefreshLockPath returns market-refresh.lock inside userData', () => {
     expect(paths.getMarketRefreshLockPath()).toBe(path.join(USER_DATA, 'market-refresh.lock'));
 });

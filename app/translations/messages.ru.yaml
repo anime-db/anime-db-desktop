@@ -319,6 +319,7 @@ settings_market:
     install_success: 'Плагин «%pluginId%» успешно установлен.'
     update_button: Обновить
     update_success: 'Плагин «%pluginId%» успешно обновлён. Настройки плагина сохранены.'
+    installer_pending: 'Плагины, выбранные в установщике, ещё не установлены и будут установлены автоматически: %plugins%.'
     registry_unavailable: Каталог маркета ещё не готов. Он появится после ближайшего фонового обновления.
     install_error_registry_unavailable: Каталог маркета ещё не готов. Попробуйте ещё раз позже.
     install_error_unknown_plugin: Этот плагин больше не числится в каталоге маркета.
