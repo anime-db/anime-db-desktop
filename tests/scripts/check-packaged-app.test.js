@@ -24,7 +24,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { checkDependencyClosure, checkUpdateMetadata } = require('../../scripts/check-packaged-app');
+const { checkDependencyClosure, checkUpdateMetadata, checkReleaseBuildFlag } = require('../../scripts/check-packaged-app');
 
 let tmp;
 
@@ -183,5 +183,55 @@ describe('checkUpdateMetadata', () => {
         const problems = checkUpdateMetadata(dist(yml(spaced), [spaced, `${spaced}.blockmap`]));
 
         expect(problems).toEqual([`installer name "${spaced}" contains whitespace: GitHub renames such assets and the download would 404`]);
+    });
+});
+
+describe('checkReleaseBuildFlag', () => {
+    function app(pkg) {
+        const appDir = path.join(tmp, 'app');
+        writePkg(appDir, pkg, null);
+        return appDir;
+    }
+
+    test('passes on a tag build with releaseBuild true and the tag version', () => {
+        expect(checkReleaseBuildFlag(app({ version: '1.2.3', releaseBuild: true }), 'tag', 'v1.2.3')).toEqual([]);
+    });
+
+    test('passes on a non-tag build with releaseBuild false', () => {
+        expect(checkReleaseBuildFlag(app({ version: '0.0.1', releaseBuild: false }), 'branch', 'master')).toEqual([]);
+        expect(checkReleaseBuildFlag(app({ version: '0.0.1', releaseBuild: false }), undefined, undefined)).toEqual([]);
+    });
+
+    test('reports releaseBuild false on a tag build', () => {
+        expect(checkReleaseBuildFlag(app({ version: '1.2.3', releaseBuild: false }), 'tag', 'v1.2.3')).toEqual([
+            'releaseBuild is false in the packaged package.json: expected true on tag build v1.2.3, the auto-updater would be disabled',
+        ]);
+    });
+
+    test('reports a missing releaseBuild on a tag build', () => {
+        expect(checkReleaseBuildFlag(app({ version: '1.2.3' }), 'tag', 'v1.2.3')).toEqual([
+            'releaseBuild is undefined in the packaged package.json: expected true on tag build v1.2.3, the auto-updater would be disabled',
+        ]);
+    });
+
+    test('reports a version that differs from the tag', () => {
+        const problems = checkReleaseBuildFlag(app({ version: '1.2.2', releaseBuild: true }), 'tag', 'v1.2.3');
+
+        expect(problems).toEqual(['version "1.2.2" in the packaged package.json does not match tag v1.2.3']);
+    });
+
+    test('reports releaseBuild true on a non-tag build', () => {
+        expect(checkReleaseBuildFlag(app({ version: '0.0.1', releaseBuild: true }), 'branch', 'master')).toEqual(['releaseBuild is true in the packaged package.json: expected false on a non-tag build']);
+    });
+
+    test('reports a missing releaseBuild on a non-tag build', () => {
+        expect(checkReleaseBuildFlag(app({ version: '0.0.1' }), 'branch', 'master')).toEqual(['releaseBuild is undefined in the packaged package.json: expected false on a non-tag build']);
+    });
+
+    test('reports both problems on a tag build with releaseBuild false and a wrong version', () => {
+        expect(checkReleaseBuildFlag(app({ version: '1.2.2', releaseBuild: false }), 'tag', 'v1.2.3')).toEqual([
+            'releaseBuild is false in the packaged package.json: expected true on tag build v1.2.3, the auto-updater would be disabled',
+            'version "1.2.2" in the packaged package.json does not match tag v1.2.3',
+        ]);
     });
 });

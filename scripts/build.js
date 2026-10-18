@@ -31,16 +31,17 @@ const appDir = path.join(rootDir, 'app');
 const packageJsonPath = path.join(rootDir, 'package.json');
 const buildIdPath = path.join(rootDir, 'scripts', 'build-id.txt');
 
-const RELEASE_TAG_PATTERN = /^v\d+\.\d+\.\d+(-[0-9A-Za-z-.]+)?(\+[0-9A-Za-z-.]+)?$/;
+const RELEASE_TAG_PATTERN = /^v\d+\.\d+\.\d+$/;
 
 /**
  * Stamps package.json's "version" from the GITHUB_REF_NAME env var — set automatically by
  * GitHub Actions on every run, no workflow changes needed — when the run was triggered by a
- * release tag ("v1.2.3" -> "1.2.3", including semver pre-release/build tags like "v1.0.0-rc1").
- * No-op outside of a tag build (workflow_dispatch, local runs), leaving the checked-in version
- * untouched. A tag build whose ref doesn't parse as a release tag throws instead of silently
- * keeping the checked-in version, since the build trigger accepts a wider tag pattern than this
- * function parses.
+ * release tag ("v1.2.3" -> "1.2.3"). No-op outside of a tag build (workflow_dispatch, local runs),
+ * leaving the checked-in version untouched. A tag build whose ref isn't exactly "vX.Y.Z" throws
+ * instead of silently keeping the checked-in version, since the build trigger accepts a wider tag
+ * pattern than this function parses. Pre-release ("-rc1") and build ("+build1") suffixes are not
+ * supported: the release is published as a stable one, so such a tag would become
+ * /releases/latest for installed copies and switch their auto-updater off.
  */
 function syncVersionFromTag(
     refName = process.env.GITHUB_REF_NAME,
@@ -64,11 +65,10 @@ function syncVersionFromTag(
     console.log(`Stamped package.json version from tag: ${version}`);
 }
 
-const RELEASE_BUILD_TAG_PATTERN = /^v\d+\.\d+\.\d+$/;
-
 /**
  * Stamps package.json's "releaseBuild" flag on every build: true for a "vX.Y.Z" tag build, false
- * otherwise (workflow_dispatch, local runs, pre-release tags). The auto-updater (native/updater)
+ * otherwise (workflow_dispatch, local runs). Uses the same RELEASE_TAG_PATTERN as
+ * syncVersionFromTag: suffixed tags are not supported (see there). The auto-updater (native/updater)
  * only runs when it is true, so a test build (version 0.0.1) never "updates" itself to the latest
  * release. A package.json field (not a separate file) is always packaged, whatever "build.files" says.
  */
@@ -77,7 +77,7 @@ function stampReleaseBuildFlag(
     refType = process.env.GITHUB_REF_TYPE,
     pkgPath = packageJsonPath
 ) {
-    const isRelease = refType === 'tag' && RELEASE_BUILD_TAG_PATTERN.test(refName || '');
+    const isRelease = refType === 'tag' && RELEASE_TAG_PATTERN.test(refName || '');
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
     if (pkg.releaseBuild === isRelease) return;
 
