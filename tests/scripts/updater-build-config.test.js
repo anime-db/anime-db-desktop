@@ -32,7 +32,7 @@ const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package
 
 describe('release build configuration for the updater', () => {
     test('build.files does not exclude node_modules', () => {
-        const excluded = pkg.build.files.filter((entry) => /^!node_modules(\/|$)/.test(entry));
+        const excluded = pkg.build.files.filter((entry) => entry.startsWith('!') && /node_modules|electron-updater/.test(entry));
 
         expect(excluded).toEqual([]);
     });

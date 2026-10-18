@@ -36,8 +36,8 @@ const jsDir = path.join(rootDir, 'app', 'public', 'js');
 
 /**
  * Third-party scripts served from app/public/js. Copied rather than referenced from
- * node_modules: node_modules is excluded from the packaged app (see package.json
- * "build.files"), and the Content-Security-Policy set in native/content-security-policy.js
+ * node_modules: the packaged app only carries production dependencies
+ * (electron-builder drops devDependencies, and htmx.org and bootstrap are dev-only), and the Content-Security-Policy set in native/content-security-policy.js
  * is script-src 'self', so a CDN is not an option either.
  */
 const VENDOR_SCRIPTS = [
