@@ -241,7 +241,7 @@ final class PluginsInstallSelectedCommandTest extends TestCase
         });
 
         $this->assertSame(['installed' => ['animedb-a', 'animedb-c']], $this->stdout($tester));
-        $this->assertSame(['animedb-b'], array_values($this->selectionOnDisk() ?? []));
+        $this->assertSame(['animedb-b'], $this->selectionOnDisk());
         $this->assertSame(Command::SUCCESS, $tester->getStatusCode());
     }
 
