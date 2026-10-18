@@ -595,3 +595,15 @@ Electron берёт имя приложения из `productName`/`name` вер
 тоже переопределяет имя. Появление `productName` верхнего уровня, `build.extraMetadata.productName` или
 `build.extraMetadata.name` сменило бы
 `userData` и потребовало миграции данных; от этого страхует `tests/native/installer-paths.test.js`.
+
+## `build/installer.nsh` разбирается до `installer.nsi` — переменные шаблонов electron-builder в нём не объявлены
+
+electron-builder подключает пользовательский include (`nsis.include`) в общем заголовке, который склеивается **перед**
+шаблоном `installer.nsi`; `Var installMode` объявляется позже (`multiUser.nsh`). Обращение к `$installMode` и другим
+переменным шаблонов из `build/installer.nsh` даёт `warning 6000`, а `makensis -WX` превращает его в падение сборки.
+Видно это только в `build.yml`: PR-джобы `makensis` не запускают. Режим «для всех пользователей» определяется сравнением
+`$APPDATA` с `ReadEnvStr APPDATA`; от возврата переменных шаблонов страхует `tests/scripts/installer-nsh.test.js`.
+
+Так же в `build/installer.nsh` не определены макросы `MUI2.nsh` (`MUI2.nsh` подключает `installer.nsi:9`, уже после нашего
+файла): `!insertmacro MUI_HEADER_TEXT` даёт `macro named "MUI_HEADER_TEXT" not found!`. Нужен явный `!include MUI2.nsh`
+(защита `!ifndef MUI_INCLUDED` делает повторное подключение из шаблона безопасным); страж проверяет и это.

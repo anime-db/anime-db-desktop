@@ -60,6 +60,7 @@
 
 !include LogicLib.nsh
 !include nsDialogs.nsh
+!include MUI2.nsh
 
 ; English is declared first so that it is the fallback at runtime. Only the languages listed in
 ; "nsis.installerLanguages" (package.json) are loaded, so every loaded language has a value here.
@@ -76,14 +77,23 @@ Var AnimedbPluginsPageShown
 ; start and kept on uninstall, unlike ${isUpdated} or plugins.json, which do not mark a first
 ; install reliably), no earlier selection file, not a silent run, and only for the current user
 ; (in the "all users" mode $APPDATA points at ProgramData while the app reads the user profile).
+; The mode is detected by comparing $APPDATA with the user's APPDATA environment variable: this
+; include is parsed before the electron-builder templates, so template variables such as the
+; install mode one are not declared yet here (makensis -WX turns that into a build failure).
+; For the same reason the MUI macros (MUI_HEADER_TEXT) are not defined without the explicit
+; "!include MUI2.nsh" above; its include guard makes the later include from installer.nsi safe.
 Function animedbPluginsPageCreate
   StrCpy $AnimedbPluginsPageShown ""
   ${If} ${Silent}
     Abort
   ${EndIf}
-  ${If} $installMode != "CurrentUser"
+  Push $R0
+  ReadEnvStr $R0 APPDATA
+  ${If} $R0 != $APPDATA
+    Pop $R0
     Abort
   ${EndIf}
+  Pop $R0
   ${If} ${FileExists} "$APPDATA\anime-db-desktop\data.db"
     Abort
   ${EndIf}
