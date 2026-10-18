@@ -8,7 +8,17 @@
     "splash.step_done": "Готово",
 
     "tray.open": "Открыть",
+    "tray.check_updates": "Проверить обновления",
     "tray.quit": "Выход",
+
+    "updater.title": "Обновление AnimeDB",
+    "updater.ready": "Обновление v%version% готово",
+    "updater.restart_now": "Перезапустить сейчас",
+    "updater.later": "Позже",
+    "updater.disabled": "Автообновление отключено в тестовой сборке",
+    "updater.up_to_date": "Нет обновлений",
+    "updater.downloading": "Скачивается обновление v%version%...",
+    "updater.error": "Не удалось проверить обновления: %message%",
 
     "dialog.startup_error_title": "Ошибка запуска",
     "dialog.uncaught_error_title": "Необработанная ошибка",

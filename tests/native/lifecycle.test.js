@@ -69,6 +69,9 @@ jest.mock('../../native/supervisor/safe-mode', () => ({
 jest.mock('../../native/window', () => ({ createWindow: jest.fn() }));
 jest.mock('../../native/window/splash', () => ({ createSplash: jest.fn() }));
 jest.mock('../../native/tray', () => ({ create: jest.fn(), setState: jest.fn() }));
+jest.mock('../../native/updater', () => ({
+    init: jest.fn(), start: jest.fn(), stop: jest.fn(), checkManually: jest.fn(), disableInstallOnQuit: jest.fn(),
+}));
 jest.mock('../../native/ws-client', () => ({ connect: jest.fn(), disconnect: jest.fn(), on: jest.fn() }));
 jest.mock('../../native/proxy', () => ({
     registerProxyAuthHandler: jest.fn(),
@@ -467,6 +470,19 @@ describe('relaunch (issue #656)', () => {
         expect(wsClient.disconnect).toHaveBeenCalledTimes(1);
         expect(supervisor.stop).toHaveBeenCalledTimes(1);
         expect(app.exit).toHaveBeenCalledWith(0);
+    });
+
+    test('relaunch() disables install-on-quit before quitting', () => {
+        const { app, relaunch } = loadLifecycle();
+        const updater = require('../../native/updater');
+        app.quit.mockImplementation(() => {
+            expect(updater.disableInstallOnQuit).toHaveBeenCalledTimes(1);
+        });
+
+        relaunch();
+
+        expect(app.quit).toHaveBeenCalledTimes(1);
+        app.quit.mockReset();
     });
 
     test('relaunch() bypasses the tray-hide close handler, even for a window already hidden to tray', async () => {

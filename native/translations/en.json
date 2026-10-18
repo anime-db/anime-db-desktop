@@ -8,7 +8,17 @@
     "splash.step_done": "Done",
 
     "tray.open": "Open",
+    "tray.check_updates": "Check for updates",
     "tray.quit": "Quit",
+
+    "updater.title": "AnimeDB update",
+    "updater.ready": "Update v%version% is ready",
+    "updater.restart_now": "Restart now",
+    "updater.later": "Later",
+    "updater.disabled": "Auto-update is disabled in test builds",
+    "updater.up_to_date": "No updates available",
+    "updater.downloading": "Downloading update v%version%...",
+    "updater.error": "Update check failed: %message%",
 
     "dialog.startup_error_title": "Startup error",
     "dialog.uncaught_error_title": "Unhandled error",

@@ -42,8 +42,9 @@ const ICONS = {
  *
  * @param {import('electron').BrowserWindow} mainWindow
  * @param {Function} onQuit
+ * @param {Function} [onCheckUpdates]
  */
-function create(mainWindow, onQuit) {
+function create(mainWindow, onQuit, onCheckUpdates) {
     const icon = nativeImage.createFromPath(ICONS.idle);
     tray = new Tray(icon);
     tray.setToolTip('AnimeDB');
@@ -52,6 +53,7 @@ function create(mainWindow, onQuit) {
     const menu = Menu.buildFromTemplate([
         { label: i18n.t('tray.open', locale), click: () => mainWindow.show() },
         { type: 'separator' },
+        ...(onCheckUpdates ? [{ label: i18n.t('tray.check_updates', locale), click: onCheckUpdates }] : []),
         { label: i18n.t('tray.quit', locale), click: onQuit },
     ]);
     tray.setContextMenu(menu);

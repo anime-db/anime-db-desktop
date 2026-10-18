@@ -64,6 +64,28 @@ function syncVersionFromTag(
     console.log(`Stamped package.json version from tag: ${version}`);
 }
 
+const RELEASE_BUILD_TAG_PATTERN = /^v\d+\.\d+\.\d+$/;
+
+/**
+ * Stamps package.json's "releaseBuild" flag on every build: true for a "vX.Y.Z" tag build, false
+ * otherwise (workflow_dispatch, local runs, pre-release tags). The auto-updater (native/updater)
+ * only runs when it is true, so a test build (version 0.0.1) never "updates" itself to the latest
+ * release. A package.json field (not a separate file) is always packaged, whatever "build.files" says.
+ */
+function stampReleaseBuildFlag(
+    refName = process.env.GITHUB_REF_NAME,
+    refType = process.env.GITHUB_REF_TYPE,
+    pkgPath = packageJsonPath
+) {
+    const isRelease = refType === 'tag' && RELEASE_BUILD_TAG_PATTERN.test(refName || '');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    if (pkg.releaseBuild === isRelease) return;
+
+    pkg.releaseBuild = isRelease;
+    fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 4) + '\n', 'utf8');
+    console.log(`Stamped package.json releaseBuild: ${isRelease}`);
+}
+
 /**
  * Stamps a value that changes on every build into scripts/build-id.txt — packaged with the app
  * (see package.json "build.files") and hashed into the runtime cache-invalidation fingerprint
@@ -97,6 +119,7 @@ function generateInstallerPlugins(run = execSync, appPath = appDir) {
 
 function main({ appPath = appDir, pkgPath = packageJsonPath, buildIdOutPath = buildIdPath } = {}) {
     syncVersionFromTag(process.env.GITHUB_REF_NAME, process.env.GITHUB_REF_TYPE, pkgPath);
+    stampReleaseBuildFlag(process.env.GITHUB_REF_NAME, process.env.GITHUB_REF_TYPE, pkgPath);
     writeBuildId(buildIdOutPath);
 
     execSync('composer install --no-dev --optimize-autoloader', { cwd: appPath, stdio: 'inherit' });
@@ -116,4 +139,4 @@ if (require.main === module) {
     main();
 }
 
-module.exports = { syncVersionFromTag, writeBuildId, generateInstallerPlugins, main };
+module.exports = { syncVersionFromTag, stampReleaseBuildFlag, writeBuildId, generateInstallerPlugins, main };
