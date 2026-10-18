@@ -49,7 +49,7 @@ anime-db-desktop/
 │   │   ├── Plugin/            # плагинная система
 │   │   └── Kernel.php
 │   ├── templates/             # Twig + HTMX-фрагменты
-│   ├── var/                   # в продакшн → AppData/AnimeDB/var/ (APP_RUNTIME_DIR)
+│   ├── var/                   # в продакшн → AppData/anime-db-desktop/var/ (APP_RUNTIME_DIR)
 │   └── composer.json
 ├── bin/         # .gitignore — тянутся download-bins.js при сборке
 │   ├── frankenphp/frankenphp.exe   # + php8ts.dll, ext/*.dll, ICU-библиотеки — см. architecture.md

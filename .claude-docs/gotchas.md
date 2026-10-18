@@ -20,7 +20,7 @@ FrankenPHP — Go-бинарник на базе static-php-cli со встро�
 
 ## PHPRC — это путь к папке, не к файлу
 
-`PHPRC=AppData/AnimeDB` (папка), а не `AppData/AnimeDB/php.ini`. FrankenPHP ищет `php.ini` внутри папки, на которую указывает `PHPRC`. Если передать путь к файлу — настройки не применятся.
+`PHPRC=AppData/anime-db-desktop` (папка), а не `AppData/anime-db-desktop/php.ini`. FrankenPHP ищет `php.ini` внутри папки, на которую указывает `PHPRC`. Если передать путь к файлу — настройки не применятся.
 
 ## Meilisearch Enterprise несовместима с GPLv3
 
@@ -32,11 +32,11 @@ Meilisearch выпускается в двух вариантах: Community (MI
 
 ## app/var/ в продакшн — это AppData, не каталог установки
 
-В dev `app/var/` живёт рядом с кодом. В продакшн Electron передаёт `APP_RUNTIME_DIR=AppData/AnimeDB/var` в env FrankenPHP. Symfony пишет кэш и логи туда. В инсталлятор не нужно включать `app/var/` — она создаётся при первом запуске.
+В dev `app/var/` живёт рядом с кодом. В продакшн Electron передаёт `APP_RUNTIME_DIR=AppData/anime-db-desktop/var` в env FrankenPHP. Symfony пишет кэш и логи туда. В инсталлятор не нужно включать `app/var/` — она создаётся при первом запуске.
 
 ## Meilisearch индекс несовместим между версиями
 
-LMDB-индекс от одной версии Meilisearch нельзя открыть другой. При обновлении бинарника — обязателен вайп `AppData/AnimeDB/meilisearch/` и переиндексация из SQLite. Это не баг — так работает Meilisearch. Механизм обнаружения: `versions.json` vs `meilisearch/VERSION`.
+LMDB-индекс от одной версии Meilisearch нельзя открыть другой. При обновлении бинарника — обязателен вайп `AppData/anime-db-desktop/meilisearch/` и переиндексация из SQLite. Это не баг — так работает Meilisearch. Механизм обнаружения: `versions.json` vs `meilisearch/VERSION`.
 
 ## VC++ Runtime для Meilisearch на Windows
 
@@ -197,7 +197,7 @@ Node оборачивает каждый CommonJS-модуль в функцию
 
 `before-quit` — единственное штатное место, где `native/supervisor/index.js` останавливал дочерние процессы (`frankenphp.exe`, `meilisearch.exe`, `qbittorrent-nox.exe`) до issue #390. Оно не срабатывает при падении Electron, принудительном завершении из диспетчера задач или при апдейте поверх работающей копии (см. issue #390) — дочерние процессы остаются висеть, держат порты и файлы БД (`data.db` в WAL-режиме, LMDB Meilisearch), и следующий запуск на них натыкается.
 
-Решение — `native/supervisor/pid-tracker.js`, общий для всех четырёх дочерних процессов: PID пишется в `AppData/AnimeDB/var/pids/<name>.pid` при спавне, удаляется при штатном `stop()`. `killOrphan()` читает оставшийся файл (если он есть — значит предыдущий сеанс не дошёл до `stop()`), проверяет через `tasklist /FI "PID eq <pid>"`, что PID всё ещё принадлежит **тому же имени образа** (не голому факту "процесс с таким PID существует" — ОС может успеть переиспользовать PID для чего-то совершенно другого между сеансами), и только тогда убивает через `taskkill /PID <pid> /F`. Файл-трекер удаляется в любом случае, даже если процесс уже не жив. И `tasklist`, и `taskkill` вызываются с `{ windowsHide: true }` — без этой опции Electron, будучи GUI-процессом без консоли, мигает отдельным чёрным консольным окном на каждый вызов.
+Решение — `native/supervisor/pid-tracker.js`, общий для всех четырёх дочерних процессов: PID пишется в `AppData/anime-db-desktop/var/pids/<name>.pid` при спавне, удаляется при штатном `stop()`. `killOrphan()` читает оставшийся файл (если он есть — значит предыдущий сеанс не дошёл до `stop()`), проверяет через `tasklist /FI "PID eq <pid>"`, что PID всё ещё принадлежит **тому же имени образа** (не голому факту "процесс с таким PID существует" — ОС может успеть переиспользовать PID для чего-то совершенно другого между сеансами), и только тогда убивает через `taskkill /PID <pid> /F`. Файл-трекер удаляется в любом случае, даже если процесс уже не жив. И `tasklist`, и `taskkill` вызываются с `{ windowsHide: true }` — без этой опции Electron, будучи GUI-процессом без консоли, мигает отдельным чёрным консольным окном на каждый вызов.
 
 **Порядок вызова важен.** `frankenphp.js` и `messenger-consumer.js` спавнят один и тот же бинарник (`frankenphp.exe`, разные аргументы CLI) — у них разные ключи трекера (`LOG_PREFIX`: `'frankenphp'` vs `'messenger-consumer'`), поэтому PID-файлы не конфликтуют сами по себе. Но если бы каждый модуль по-прежнему вызывал `killOrphan()` лениво, внутри собственного `start()` (как было изначально), то к моменту вызова `messengerConsumer.start()` — третьим по счёту в `supervisor.start()`, уже после `frankenphp.start()` — `frankenphp.exe` текущего сеанса уже запущен и мог получить PID, переиспользованный ОС из `messenger-consumer.pid` предыдущего аварийного сеанса. Проверка по имени образа в этом случае прошла бы (это ведь и правда `frankenphp.exe`), и `killOrphan()` убил бы собственный, только что стартовавший backend — с виду обычный backoff-рестарт в логе, ищи потом причину. Исправлено: каждый модуль экспортирует `killOrphan()` отдельно от `start()`, и `native/supervisor/index.js` вызывает все четыре одним `Promise.all()` в начале своего `start()`, до того как запущен хоть один дочерний процесс текущего сеанса — тогда убивать нечего, PID текущего сеанса ещё не существуют (issue #390, ревью PR #395).
 
@@ -205,7 +205,7 @@ Node оборачивает каждый CommonJS-модуль в функцию
 
 ## Любой новый спавн PHP-процесса обязан собирать env через `native/supervisor/env.js`, не заводить свою копию (issue #391)
 
-До issue #391 `frankenphp.js` и `messenger-consumer.js` собирали env для дочернего PHP-процесса каждый своей независимой `buildEnv()`. Копии разошлись: у `messenger-consumer.js` отсутствовал `PLUGINS_DIR` (и `QBITTORRENT_URL`), из-за чего `Kernel::installedPluginsRegistry()` откатывался на `var/plugins` внутри каталога установки вместо `AppData/AnimeDB/plugins` — обработчик фоновых задач (`messenger:consume`) видел не тот набор установленных плагинов, что веб-воркер, без единой ошибки в логе. Риск усиливается тем, что набор бандлов плагинов, вычисленный из `PLUGINS_DIR`, запекается в `<Container>.bundles.php` (см. докблок `Kernel::initializeBundles()`) при первой компиляции контейнера — если первым бутом окажется будущий консольный вызов схемы (`doctrine:migrations:migrate`, `messenger:setup-transports`) с неполным env, испорченный dump-контейнер молча переиспользуется всеми последующими процессами.
+До issue #391 `frankenphp.js` и `messenger-consumer.js` собирали env для дочернего PHP-процесса каждый своей независимой `buildEnv()`. Копии разошлись: у `messenger-consumer.js` отсутствовал `PLUGINS_DIR` (и `QBITTORRENT_URL`), из-за чего `Kernel::installedPluginsRegistry()` откатывался на `var/plugins` внутри каталога установки вместо `AppData/anime-db-desktop/plugins` — обработчик фоновых задач (`messenger:consume`) видел не тот набор установленных плагинов, что веб-воркер, без единой ошибки в логе. Риск усиливается тем, что набор бандлов плагинов, вычисленный из `PLUGINS_DIR`, запекается в `<Container>.bundles.php` (см. докблок `Kernel::initializeBundles()`) при первой компиляции контейнера — если первым бутом окажется будущий консольный вызов схемы (`doctrine:migrations:migrate`, `messenger:setup-transports`) с неполным env, испорченный dump-контейнер молча переиспользуется всеми последующими процессами.
 
 Решение — `native/supervisor/env.js`: `buildCommonEnv(context)` возвращает полный набор переменных, обязательных для **любого** PHP-процесса (все пути к пользовательским данным — `PLUGINS_DIR`, `PLUGINS_CONFIG_PATH`, `CONFIG_PATH`, `MEDIA_DIR`, `APP_RUNTIME_DIR`, `DATABASE_URL`/`QUEUE_DATABASE_URL`, а также `QBITTORRENT_URL`/`OAUTH_CALLBACK_ORIGIN`); `buildWebWorkerEnv(context, wsPort)` добавляет `APP_PORT`/`WS_PORT` — переменные, осмысленные только для веб-воркера FrankenPHP. `frankenphp.js`, `messenger-consumer.js` и `search-reindex.js` — тонкие обёртки над этими двумя функциями. Любой будущий спавн PHP (в т.ч. консольные вызовы схемы) обязан использовать `env.js`, а не собирать `process.env`-объект самостоятельно.
 
@@ -254,7 +254,7 @@ if (!class_exists($class)) {
 
 ## `console.error` в главном процессе собранного Electron-приложения не попадает никуда
 
-У дочерних процессов (`frankenphp`, `meilisearch`, `qbittorrent-nox`, `messenger-consumer`) есть файловые логи через `native/supervisor/logrotate.js`, подключённые в каждом супервизоре. У самого главного процесса (`lifecycle/index.js`) такого лога не было — в собранном GUI-приложении под Windows у процесса нет консоли, `console.error` пишет в никуда, и `process.on('uncaughtException')` до issue #390 (ревью PR #395) молча убивал все дочерние процессы и завершал приложение без единой строчки диагностики. Исправлено: `logCrash()` в `lifecycle/index.js` синхронно (`fs.appendFileSync`, не поток) дописывает стек в `AppData/AnimeDB/var/log/main-YYYY-MM-DD.log` — та же схема именования, что и у остальных логов (`todayStr()` из `logrotate.js`, экспортирован специально для этого) — и обёрнут в `try/catch` best-effort, поскольку показать `dialog.showErrorBox()` и выйти важнее самого факта записи в лог. `uncaughtException` теперь не подменяет штатное поведение Electron (диалог с ошибкой), а явно его воспроизводит перед `app.exit(1)`.
+У дочерних процессов (`frankenphp`, `meilisearch`, `qbittorrent-nox`, `messenger-consumer`) есть файловые логи через `native/supervisor/logrotate.js`, подключённые в каждом супервизоре. У самого главного процесса (`lifecycle/index.js`) такого лога не было — в собранном GUI-приложении под Windows у процесса нет консоли, `console.error` пишет в никуда, и `process.on('uncaughtException')` до issue #390 (ревью PR #395) молча убивал все дочерние процессы и завершал приложение без единой строчки диагностики. Исправлено: `logCrash()` в `lifecycle/index.js` синхронно (`fs.appendFileSync`, не поток) дописывает стек в `AppData/anime-db-desktop/var/log/main-YYYY-MM-DD.log` — та же схема именования, что и у остальных логов (`todayStr()` из `logrotate.js`, экспортирован специально для этого) — и обёрнут в `try/catch` best-effort, поскольку показать `dialog.showErrorBox()` и выйти важнее самого факта записи в лог. `uncaughtException` теперь не подменяет штатное поведение Electron (диалог с ошибкой), а явно его воспроизводит перед `app.exit(1)`.
 
 ## `frankenphp php-cli` не понимает CLI-SAPI-флаги (`-l`, `-m`, `-v`) — только путь к скрипту либо `-r <code>` (issue #471)
 
@@ -585,3 +585,13 @@ Symfony при наличии параметра `%count%` прогоняет с
 - **Локаль в фоне:** `WorkerLocaleSubscriber` на каждое сообщение выставляет локаль translator'а (сохранённая,
   согласованная с `AvailableLocalesProvider::all()`); `CatalogReader`/`AnimeViewFactory` вне запроса читают её у
   translator'а, а не берут `en`.
+
+## `userData` собранного приложения — `%APPDATA%\anime-db-desktop`, а не `%APPDATA%\AnimeDB`
+
+Electron берёт имя приложения из `productName`/`name` верхнего уровня упакованного `package.json`; там только
+`name: anime-db-desktop`. `build.productName` задаёт лишь имя exe и ярлыков (electron-builder не переносит его в
+упакованный `package.json`). NSIS-скрипты, которые ходят в `userData` (`build/installer.nsh`), обязаны использовать
+`$APPDATA\anime-db-desktop`. `build.extraMetadata` electron-builder вливает в упакованный `package.json` целиком, поэтому `build.extraMetadata.name`
+тоже переопределяет имя. Появление `productName` верхнего уровня, `build.extraMetadata.productName` или
+`build.extraMetadata.name` сменило бы
+`userData` и потребовало миграции данных; от этого страхует `tests/native/installer-paths.test.js`.

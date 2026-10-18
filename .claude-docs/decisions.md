@@ -27,7 +27,7 @@ FrankenPHP и Meilisearch не имеют x32-сборок для Windows. macOS
 
 ## php.ini — шаблон под git, динамический ini в AppData
 
-`bin/php/php.ini.template` под git. При первом запуске `frankenphp.js` пишет `AppData/AnimeDB/php.ini` с подстановкой часового пояса. `PHPRC` указывает на папку (`AppData/AnimeDB/`), не на файл.
+`bin/php/php.ini.template` под git. При первом запуске `frankenphp.js` пишет `AppData/anime-db-desktop/php.ini` с подстановкой часового пояса. `PHPRC` указывает на папку (`AppData/anime-db-desktop/`), не на файл.
 
 ## SQLite + JSON-колонки (хранилище)
 
@@ -45,7 +45,7 @@ Enterprise версия под BSL-1.1 — несовместима с GPLv3. В
 
 **Отклонён Вариант A** (фоновый swap): два одновременных процесса Meilisearch + удвоение памяти — избыточно для личной коллекции.
 
-Обнаружение версии: `meilisearch.js` сравнивает `versions.json` (рядом с бинарником) с `AppData/AnimeDB/meilisearch/VERSION` (Meilisearch пишет сам).
+Обнаружение версии: `meilisearch.js` сравнивает `versions.json` (рядом с бинарником) с `AppData/anime-db-desktop/meilisearch/VERSION` (Meilisearch пишет сам).
 
 ## Graceful shutdown — OS-level kill, без HTTP-эндпоинта
 
@@ -75,7 +75,7 @@ HTTP-shutdown в Symfony не подходит: FrankenPHP — Go-процесс
 
 ## APP_SECRET — генерация при первом запуске, хранение в AppData
 
-`APP_SECRET` генерируется Electron при первом запуске (`crypto.randomBytes(32).toString('hex')`), сохраняется в `AppData/AnimeDB/config.json`, передаётся всем дочерним PHP-процессам через общий `buildCommonEnv()` (`native/supervisor/env.js`). Каждая установка получает свой уникальный секрет.
+`APP_SECRET` генерируется Electron при первом запуске (`crypto.randomBytes(32).toString('hex')`), сохраняется в `AppData/anime-db-desktop/config.json`, передаётся всем дочерним PHP-процессам через общий `buildCommonEnv()` (`native/supervisor/env.js`). Каждая установка получает свой уникальный секрет.
 
 **Отклонено:** генерация в NSIS-инсталлере — инсталлер не знает AppData конкретного пользователя Windows.
 
@@ -197,7 +197,7 @@ FrankenPHP завершается первым — новых HTTP-запрос�
 - Единственный транспорт `async` (`config/packages/messenger.yaml`) сидит на DSN `doctrine://queue?auto_setup=0` — `auto_setup=0` осознанно: таблица `messenger_messages` создаётся явно через `bin/console messenger:setup-transports`, а не неявно при первом подключении.
 - `retry_strategy` транспорта `async` задан явно (`max_retries: 3, delay: 1000, multiplier: 2, max_delay: 0`), хотя эти значения совпадают с дефолтом Symfony — сделано намеренно, чтобы поведение не менялось незаметно при апгрейде Symfony. Конкретные хендлеры могут переопределять поведение поштучно через `UnrecoverableMessageHandlingException`.
 - `failure_transport` сознательно не заводится — desktop-приложение с одним конечным пользователем, некому вручную разбирать `messenger:failed:*` по расписанию.
-- В продакшн `QUEUE_DATABASE_URL` и `MESSENGER_TRANSPORT_DSN` передаются через общий `buildCommonEnv()` (`native/supervisor/env.js`, issue #391) — единственный источник переменных окружения для всех дочерних PHP-процессов (по аналогии с `DATABASE_URL`), путь — `paths.getQueueDbPath()` (`AppData/AnimeDB/queue.db`, плоско, как и `data.db`, без вложенной папки `data/` — это только dev-соглашение из `.env`).
+- В продакшн `QUEUE_DATABASE_URL` и `MESSENGER_TRANSPORT_DSN` передаются через общий `buildCommonEnv()` (`native/supervisor/env.js`, issue #391) — единственный источник переменных окружения для всех дочерних PHP-процессов (по аналогии с `DATABASE_URL`), путь — `paths.getQueueDbPath()` (`AppData/anime-db-desktop/queue.db`, плоско, как и `data.db`, без вложенной папки `data/` — это только dev-соглашение из `.env`).
 - **Не входит в объём**: защита от конкурентного выполнения задач (`job_locks`), supervisor-процесс consumer'а в Electron, реальная бизнес-логика обработчиков — всё отдельными issue.
 
 ## JSON-эндпоинт переводов для JS (issue #87)
@@ -235,7 +235,7 @@ FrankenPHP завершается первым — новых HTTP-запрос�
 ## plugins.json — общий файл настроек/credentials плагинов (issue #219)
 
 - `App\Service\Plugin\PluginsConfigStore` (`app/src/Service/Plugin/`) — один общий JSON-файл на все установленные плагины, ключ верхнего уровня — `(string) PluginId`. Хранит OAuth refresh-токены, endpoint-конфигурацию, feature-флаги. **Без шифрования** — защита на уровне прав ФС AppData, как у существующих SQLite-файлов. Короткоживущие access-токены сюда не пишутся — они в обычном кеше с TTL, это только описано в докблоке класса, а не проверяется кодом (проверить состав ключей нечем — хранилище общего назначения).
-- Путь прокинут по тому же паттерну, что `CONFIG_PATH`/`MEDIA_DIR`: `native/paths.js::getPluginsConfigPath()` → `AppData/AnimeDB/plugins.json`; передаётся в оба процесса, которые пишут в файл, — `native/supervisor/frankenphp.js` (HTTP-воркер) и `native/supervisor/messenger-consumer.js` (фоновый consumer) — через `PLUGINS_CONFIG_PATH`; в Symfony заходит как параметр `app.plugins_config_path` (dev-дефолт `var/plugins.json`) и биндится как `$pluginsConfigPath` в `services.yaml`.
+- Путь прокинут по тому же паттерну, что `CONFIG_PATH`/`MEDIA_DIR`: `native/paths.js::getPluginsConfigPath()` → `AppData/anime-db-desktop/plugins.json`; передаётся в оба процесса, которые пишут в файл, — `native/supervisor/frankenphp.js` (HTTP-воркер) и `native/supervisor/messenger-consumer.js` (фоновый consumer) — через `PLUGINS_CONFIG_PATH`; в Symfony заходит как параметр `app.plugins_config_path` (dev-дефолт `var/plugins.json`) и биндится как `$pluginsConfigPath` в `services.yaml`.
 - API: `getPluginSettings(PluginId): array` — без лока, читает `plugins.json` целиком (atomic rename при записи и так гарантирует consistent-снимок); `updatePluginSettings(PluginId, callable $modifier): void` — единственная точка записи, весь цикл читать → изменить → сериализовать → temp-файл → `rename()` → снять лок держится под `flock(LOCK_EX)`. Наружу не отдаётся отдельных «читать всё / писать всё» методов — это специально не даёт вызывающему коду самому собрать небезопасную read-then-write-без-лока последовательность.
 - **Лок держится не на самом `plugins.json`, а на соседнем `plugins.json.lock`.** См. гочу ниже — блокировка самого файла данных не работает вместе с atomic-rename-записью.
 
