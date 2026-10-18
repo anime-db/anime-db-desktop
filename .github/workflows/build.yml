@@ -95,19 +95,16 @@ jobs:
       - name: Release gate — start the built app and probe it
         run: npm run release-smoke
 
-      # Апдейтер приложения (electron-updater) должен лежать в упакованном дереве: build.files
-      # раньше исключал node_modules/**, и production-зависимость молча выпадала из сборки —
-      # приложение падало бы с MODULE_NOT_FOUND уже у пользователя (issue #1092). Проверка смотрит
-      # в то же дерево dist/win-unpacked, что упаковывается в инсталлятор, и стоит до публикации:
-      # красный шаг означает отсутствие релиза, а не выпущенный релиз без апдейтера.
-      - name: Check that electron-updater is packaged
-        shell: bash
-        run: |
-          dir=dist/win-unpacked/resources/app/node_modules/electron-updater
-          if [ ! -d "$dir" ]; then
-            echo "::error::$dir is missing: electron-updater did not make it into the packaged app"
-            exit 1
-          fi
+      # Гейт того, что нужно автообновлению от собранного приложения (issue #1092): полное
+      # замыкание production-зависимостей внутри dist/win-unpacked/resources/app (а не только
+      # каталог electron-updater — npm кладёт его зависимости рядом, и пропажа любой = тот же
+      # MODULE_NOT_FOUND у пользователя; release-smoke этого не ловит, потому что на раннере Node
+      # находит модули выше по дереву, в node_modules репозитория) и latest.yml, указывающий на
+      # существующий инсталлятор с blockmap. Стоит до публикации и идёт и на ручной сборке:
+      # красный шаг означает отсутствие релиза, а не релиз, из которого нельзя обновиться.
+      # Подробности — докблок scripts/check-packaged-app.js.
+      - name: Check the packaged app for the auto-updater
+        run: node scripts/check-packaged-app.js
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
@@ -117,6 +114,9 @@ jobs:
 
       # Релиз — канал автообновления: установленные копии читают latest.yml последнего
       # релиза и качают из него инсталлятор (blockmap — для дифференциальной загрузки).
+      #
+      # fail_on_unmatched_files: по умолчанию softprops на ненайденный glob пишет warning и всё
+      # равно публикует релиз — без latest.yml такой релиз установленные копии не увидят.
       #
       # prerelease: false задан явно: GitHub-провайдер electron-updater pre-release пропускает,
       # а флаг у существующего релиза softprops сохраняет как есть.
@@ -129,6 +129,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           prerelease: false
+          fail_on_unmatched_files: true
           files: |
             dist/*.exe
             dist/*.exe.blockmap
