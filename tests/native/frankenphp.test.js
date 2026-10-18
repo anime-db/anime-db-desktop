@@ -248,6 +248,7 @@ describe('ensurePhpIni', () => {
             'extension=openssl',
             'extension=mbstring',
             'extension=gd',
+            'extension=sodium',
             '; user comment',
             '',
         ].join('\n');
