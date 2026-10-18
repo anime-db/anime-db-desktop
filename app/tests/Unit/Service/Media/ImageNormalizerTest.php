@@ -178,7 +178,23 @@ final class ImageNormalizerTest extends TestCase
 
     public function testNormalizeRejectsArbitraryNonImageBytes(): void
     {
-        self::assertNull($this->normalizer->normalize(random_bytes(200)));
+        $bytes = "\x01\x9f\x42\xe7\x10\xfa\x33\x7c".str_repeat("\xa5\x5a\x01\xfe", 48);
+
+        self::assertFalse(@getimagesizefromstring($bytes));
+        self::assertNull($this->normalizer->normalize($bytes));
+    }
+
+    public function testNormalizeRejectsWbmp(): void
+    {
+        // Type 0, fixed header, 8x8 monochrome, 8 bytes of row data.
+        $wbmp = "\x00\x00\x08\x08".str_repeat("\xaa", 8);
+
+        $info = @getimagesizefromstring($wbmp);
+        self::assertIsArray($info);
+        self::assertSame(IMAGETYPE_WBMP, $info[2]);
+        self::assertNotFalse(@imagecreatefromstring($wbmp));
+
+        self::assertNull($this->normalizer->normalize($wbmp));
     }
 
     public function testNormalizeStripsATrailingPayloadAppendedToAValidPng(): void
