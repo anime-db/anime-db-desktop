@@ -92,13 +92,15 @@ final class ImageNormalizer
      * Input formats accepted by {@see normalize()}, matched against `getimagesizefromstring()`'s
      * `IMAGETYPE_*` type. Anything else is refused before decoding. Formats with almost no
      * signature (WBMP needs only a leading `0x00` and plausible dimensions) would otherwise let
-     * arbitrary bytes pass as an image.
+     * arbitrary bytes pass as an image. BMP stays: it carries an explicit `BM` signature and a
+     * full header, so random bytes do not pass for it.
      */
     private const array ALLOWED_IMAGE_TYPES = [
         IMAGETYPE_JPEG,
         IMAGETYPE_PNG,
         IMAGETYPE_GIF,
         IMAGETYPE_WEBP,
+        IMAGETYPE_BMP,
     ];
 
     public function __construct(private readonly int $maxAreaPixels = self::MAX_AREA_PIXELS)

@@ -184,6 +184,20 @@ final class ImageNormalizerTest extends TestCase
         self::assertNull($this->normalizer->normalize($bytes));
     }
 
+    public function testNormalizeConvertsBmpToWebp(): void
+    {
+        $image = imagecreatetruecolor(8, 8);
+        self::assertNotFalse($image);
+        $bmp = self::capture($image, static fn (\GdImage $image) => imagebmp($image));
+
+        $result = $this->normalizer->normalize($bmp);
+
+        self::assertNotNull($result);
+        $info = getimagesizefromstring($result);
+        self::assertIsArray($info);
+        self::assertSame(IMAGETYPE_WEBP, $info[2]);
+    }
+
     public function testNormalizeRejectsWbmp(): void
     {
         // Type 0, fixed header, 8x8 monochrome, 8 bytes of row data.
