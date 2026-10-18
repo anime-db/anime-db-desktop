@@ -60,6 +60,7 @@
 
 !include LogicLib.nsh
 !include nsDialogs.nsh
+!include MUI2.nsh
 
 ; English is declared first so that it is the fallback at runtime. Only the languages listed in
 ; "nsis.installerLanguages" (package.json) are loaded, so every loaded language has a value here.
@@ -79,6 +80,8 @@ Var AnimedbPluginsPageShown
 ; The mode is detected by comparing $APPDATA with the user's APPDATA environment variable: this
 ; include is parsed before the electron-builder templates, so template variables such as the
 ; install mode one are not declared yet here (makensis -WX turns that into a build failure).
+; For the same reason the MUI macros (MUI_HEADER_TEXT) are not defined without the explicit
+; "!include MUI2.nsh" above; its include guard makes the later include from installer.nsi safe.
 Function animedbPluginsPageCreate
   StrCpy $AnimedbPluginsPageShown ""
   ${If} ${Silent}

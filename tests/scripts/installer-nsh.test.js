@@ -30,13 +30,24 @@ const path = require('path');
 // resulting warning 6000 into a failed build that only shows up in build.yml.
 const TEMPLATE_VARIABLES = ['installMode', 'installAppData', 'appExe', 'installerMode'];
 
+const readCode = () =>
+  fs
+    .readFileSync(path.join(__dirname, '..', '..', 'build', 'installer.nsh'), 'utf8')
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*[;#]/.test(line))
+    .join('\n');
+
 describe('build/installer.nsh', () => {
+  test('includes MUI2.nsh when it uses MUI macros', () => {
+    const code = readCode();
+
+    if (/!insertmacro\s+MUI_/i.test(code)) {
+      expect(code).toMatch(/^\s*!include\s+"?MUI2\.nsh"?\s*$/im);
+    }
+  });
+
   test('does not use variables declared by electron-builder templates', () => {
-    const code = fs
-      .readFileSync(path.join(__dirname, '..', '..', 'build', 'installer.nsh'), 'utf8')
-      .split(/\r?\n/)
-      .filter((line) => !/^\s*[;#]/.test(line))
-      .join('\n');
+    const code = readCode();
 
     for (const name of TEMPLATE_VARIABLES) {
       expect(code).not.toMatch(new RegExp(`\\$\\{?${name}\\b`, 'i'));

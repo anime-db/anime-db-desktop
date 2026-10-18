@@ -603,3 +603,7 @@ electron-builder подключает пользовательский include (
 переменным шаблонов из `build/installer.nsh` даёт `warning 6000`, а `makensis -WX` превращает его в падение сборки.
 Видно это только в `build.yml`: PR-джобы `makensis` не запускают. Режим «для всех пользователей» определяется сравнением
 `$APPDATA` с `ReadEnvStr APPDATA`; от возврата переменных шаблонов страхует `tests/scripts/installer-nsh.test.js`.
+
+Так же в `build/installer.nsh` не определены макросы `MUI2.nsh` (`MUI2.nsh` подключает `installer.nsi:9`, уже после нашего
+файла): `!insertmacro MUI_HEADER_TEXT` даёт `macro named "MUI_HEADER_TEXT" not found!`. Нужен явный `!include MUI2.nsh`
+(защита `!ifndef MUI_INCLUDED` делает повторное подключение из шаблона безопасным); страж проверяет и это.
