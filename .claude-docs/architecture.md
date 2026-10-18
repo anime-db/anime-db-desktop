@@ -29,7 +29,7 @@ anime-db-desktop/
 │   │   ├── Plugin/         # плагинная система
 │   │   └── Kernel.php
 │   ├── templates/          # Twig + HTMX-фрагменты
-│   ├── var/                # в продакшн → AppData/AnimeDB/var/ (APP_RUNTIME_DIR)
+│   ├── var/                # в продакшн → AppData/anime-db-desktop/var/ (APP_RUNTIME_DIR)
 │   ├── Caddyfile           # статический, под git, адреса сайтов через {$APP_PORT}/{$WS_PORT}, root через {env.APP_ROOT}
 │   └── composer.json
 ├── bin/            # в .gitignore; тянутся download-bins.js при сборке
@@ -68,7 +68,7 @@ anime-db-desktop/
 
 > **Прежняя формулировка была неверной и на ней строились решения #461/#467.** До правки по issue #479 строка «Расширения» в этой таблице была одна и звучала как «статически вкомпилированы (pdo_sqlite, mbstring, curl, intl, opcache, gd, imagick, ~50 других)» — верно для Linux-сборки, но не для Windows, на которую реально собирается приложение (это полноценный дистрибутив PHP: ~80 файлов, ~160 МБ, `frankenphp.exe` без `php8ts.dll` и DLL расширений рядом не запускается). На этом факте строилось обоснование issue #461 (эндонимы локалей через ICU: «`ext-intl` в проде есть, потому что расширения FrankenPHP вкомпилированы статически») и issue #467 (`platform-check: true`). Оба решения остаются в силе — `ext-intl` в Windows-сборке действительно присутствует, просто в виде отдельной DLL, а не статики — исправлено только их фактическое обоснование. Детали проверки (`objdump -p`, состав архива) — [gotchas.md](gotchas.md#у-frankenphp-windows-x86_64zip-на-github-релизах-frankenphpexe-не-самодостаточен--зависит-от-php8tsdll-и-других-dll-из-того-же-архива).
 
-**php.ini:** `bin/php/php.ini.template` под git. При первом запуске `frankenphp.js` копирует его в `AppData/AnimeDB/php.ini`, подставляя часовой пояс (`Intl.DateTimeFormat().resolvedOptions().timeZone`). FrankenPHP стартует с `PHPRC=AppData/AnimeDB` (путь к папке, не к файлу).
+**php.ini:** `bin/php/php.ini.template` под git. При первом запуске `frankenphp.js` копирует его в `AppData/anime-db-desktop/php.ini`, подставляя часовой пояс (`Intl.DateTimeFormat().resolvedOptions().timeZone`). FrankenPHP стартует с `PHPRC=AppData/anime-db-desktop` (путь к папке, не к файлу).
 
 **Caddyfile:** статический `app/Caddyfile` под git. Root — через рантайм-плейсхолдер `{env.APP_ROOT}` (разбирается на этапе обработки запроса — там это корректно). Порт в адресе сайта — через препроцессорный `{$APP_PORT}`/`{$WS_PORT}`: адрес сайта разбирается на этапе адаптации конфига, до рантайма, и рантайм-плейсхолдер `{env.X}` там ловит `strconv.Atoi: parsing "{env.APP_PORT}": invalid syntax` (issue #532). Electron передаёт APP_PORT/WS_PORT/APP_ROOT через env дочернего процесса. Оба server-блока держат `bind 127.0.0.1` (иначе `listen` уходит на все интерфейсы, хотя локальность архитектурно предполагается) и WS-блок объявлен без хоста в адресе — хост-литерал (даже IP) заставляет Caddy завести TLS-listener для сайта несмотря на `auto_https off`; бинд, а не хост в адресе, — то, что реально ограничивает сокет.
 
@@ -122,28 +122,28 @@ anime-db-desktop/
 | Лицензия       | **Community Edition (MIT)** — обязательно       |
 | Windows-сборка | `meilisearch-windows-amd64.exe` — только x64    |
 | Язык           | Rust, таргет `x86_64-pc-windows-msvc`           |
-| Хранилище      | LMDB (AppData/AnimeDB/meilisearch/)             |
+| Хранилище      | LMDB (AppData/anime-db-desktop/meilisearch/)    |
 | PHP SDK        | `meilisearch/meilisearch-php` v1.16.1, PHP ^8.1 |
 
 SQLite — источник истины. Meilisearch — поисковый индекс поверх него.
 
-**Master key:** генерируется один раз как UUID, хранится в `AppData/AnimeDB/meilisearch-key.txt`. При перезапусках читается оттуда.
+**Master key:** генерируется один раз как UUID, хранится в `AppData/anime-db-desktop/meilisearch-key.txt`. При перезапусках читается оттуда.
 
-**Версионирование индекса:** Meilisearch строго версионирует LMDB (индекс одной версии нельзя открыть другой). При обновлении приложения: вайп `AppData/AnimeDB/meilisearch/` → пустой старт → переиндексация из SQLite.
+**Версионирование индекса:** Meilisearch строго версионирует LMDB (индекс одной версии нельзя открыть другой). При обновлении приложения: вайп `AppData/anime-db-desktop/meilisearch/` → пустой старт → переиндексация из SQLite.
 
 ## paths.js — AppData-пути
 
 Единственный источник всех путей. Импортируется напрямую из supervisor-модулей.
 
-| Функция                   | Путь                                  |
-|---------------------------|---------------------------------------|
-| `getDbPath()`             | `AppData/AnimeDB/data.db`             |
-| `getMeilisearchDataDir()` | `AppData/AnimeDB/meilisearch/`        |
-| `getPhpIniPath()`         | `AppData/AnimeDB/php.ini`             |
-| `getPhpIniDir()`          | `AppData/AnimeDB/`                    |
-| `getAppRootDir()`         | `<repo>/app/`                         |
-| `getRuntimeDir()`         | `AppData/AnimeDB/var/`                |
-| `getMeilisearchKeyPath()` | `AppData/AnimeDB/meilisearch-key.txt` |
+| Функция                   | Путь                                           |
+|---------------------------|------------------------------------------------|
+| `getDbPath()`             | `AppData/anime-db-desktop/data.db`             |
+| `getMeilisearchDataDir()` | `AppData/anime-db-desktop/meilisearch/`        |
+| `getPhpIniPath()`         | `AppData/anime-db-desktop/php.ini`             |
+| `getPhpIniDir()`          | `AppData/anime-db-desktop/`                    |
+| `getAppRootDir()`         | `<repo>/app/`                                  |
+| `getRuntimeDir()`         | `AppData/anime-db-desktop/var/`                |
+| `getMeilisearchKeyPath()` | `AppData/anime-db-desktop/meilisearch-key.txt` |
 
 ## supervisor — жизненный цикл дочерних процессов
 
@@ -163,7 +163,7 @@ Graceful shutdown: SIGTERM → 500ms → SIGKILL. Оба хранилища (SQL
 
 Каждый из четырёх дочерних процессов (`frankenphp.js`, `meilisearch.js`, `qbittorrent.js`,
 `messenger-consumer.js`) через общий `native/supervisor/pid-tracker.js` пишет свой PID в
-`AppData/AnimeDB/var/pids/<name>.pid` при спавне и удаляет файл при штатном `stop()`. Каждый модуль
+`AppData/anime-db-desktop/var/pids/<name>.pid` при спавне и удаляет файл при штатном `stop()`. Каждый модуль
 экспортирует `killOrphan()` — тонкую обёртку над `pidTracker.killOrphan()` для своих `LOG_PREFIX`/
 `BINARY`. `native/supervisor/index.js` вызывает все четыре `killOrphan()` одним `Promise.all()` в
 самом начале своего `start()`, **до** спавна любого дочернего процесса текущего сеанса: если файл
@@ -191,7 +191,7 @@ Windows.
 
 FrankenPHP стартует `public/index.php` в **worker mode** — PHP загружается один раз и остаётся в памяти.
 
-`var/` в продакшн → `AppData/AnimeDB/var/` через `APP_RUNTIME_DIR` (Electron → env → Symfony).
+`var/` в продакшн → `AppData/anime-db-desktop/var/` через `APP_RUNTIME_DIR` (Electron → env → Symfony).
 
 `src/Plugin/` — плагинная система. Один плагин на вендора, функции включаются/выключаются через настройки плагина. Плагины не имеют доступа к основной схеме SQLite — работают через `plugin_data` или отдельный SQLite-файл.
 
