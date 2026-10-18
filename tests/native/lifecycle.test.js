@@ -71,6 +71,7 @@ jest.mock('../../native/window/splash', () => ({ createSplash: jest.fn() }));
 jest.mock('../../native/tray', () => ({ create: jest.fn(), setState: jest.fn() }));
 jest.mock('../../native/updater', () => ({
     init: jest.fn(), start: jest.fn(), stop: jest.fn(), checkManually: jest.fn(), disableInstallOnQuit: jest.fn(),
+    isInstalling: jest.fn(() => false),
 }));
 jest.mock('../../native/ws-client', () => ({ connect: jest.fn(), disconnect: jest.fn(), on: jest.fn() }));
 jest.mock('../../native/proxy', () => ({
@@ -451,6 +452,84 @@ describe('cache invalidation errors (issue #403 review)', () => {
 
         expect(dialog.showErrorBox).toHaveBeenCalledWith('Ошибка запуска', 'unexplained crash');
         expect(safeModeState.commitDiagnosedFailure).not.toHaveBeenCalled();
+    });
+});
+
+describe('re-entrant stop', () => {
+    test('a second before-quit during an ongoing stop neither exits nor stops again; the first chain exits once', async () => {
+        const { app, supervisor, appHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        let resolveStop;
+        supervisor.stop.mockImplementation(() => new Promise((resolve) => { resolveStop = resolve; }));
+
+        const first  = { preventDefault: jest.fn() };
+        const second = { preventDefault: jest.fn() };
+        appHandlers['before-quit'](first);
+        appHandlers['before-quit'](second);
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(first.preventDefault).toHaveBeenCalled();
+        expect(second.preventDefault).toHaveBeenCalled();
+        expect(supervisor.stop).toHaveBeenCalledTimes(1);
+        expect(app.exit).not.toHaveBeenCalled();
+
+        resolveStop();
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(app.exit).toHaveBeenCalledTimes(1);
+        expect(app.exit).toHaveBeenCalledWith(0);
+    });
+
+    test('before-quit during a direct stopApp() does not exit or stop again', async () => {
+        const { app, supervisor, appHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        const updater = require('../../native/updater');
+        const stopApp = updater.init.mock.calls[0][0];
+        let resolveStop;
+        supervisor.stop.mockImplementation(() => new Promise((resolve) => { resolveStop = resolve; }));
+
+        const p1 = stopApp();
+        const p2 = stopApp();
+        expect(p2).toBe(p1);
+        appHandlers['before-quit']({ preventDefault: jest.fn() });
+        resolveStop();
+        await p1;
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(supervisor.stop).toHaveBeenCalledTimes(1);
+        expect(app.exit).not.toHaveBeenCalled();
+    });
+
+    test('a rejected stop is not cached: before-quit still exits and the next quit retries the stop', async () => {
+        const { app, supervisor, appHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        supervisor.stop.mockImplementationOnce(() => Promise.reject(new Error('boom')));
+
+        appHandlers['before-quit']({ preventDefault: jest.fn() });
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(app.exit).toHaveBeenCalledTimes(1);
+
+        appHandlers['before-quit']({ preventDefault: jest.fn() });
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(supervisor.stop).toHaveBeenCalledTimes(2);
+        expect(app.exit).toHaveBeenCalledTimes(2);
+    });
+
+    test('before-quit does not exit while an update install is in progress', async () => {
+        const { app, supervisor, appHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        const updater = require('../../native/updater');
+        let resolveStop;
+        supervisor.stop.mockImplementation(() => new Promise((resolve) => { resolveStop = resolve; }));
+
+        appHandlers['before-quit']({ preventDefault: jest.fn() });
+        updater.isInstalling.mockReturnValue(true);
+        resolveStop();
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(app.exit).not.toHaveBeenCalled();
     });
 });
 
