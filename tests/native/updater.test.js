@@ -78,6 +78,44 @@ describe('install ordering', () => {
         s.updater.stop();
     });
 
+    test('install-on-quit is off for the whole installNow() and install() runs once, after stopApp() resolves', async () => {
+        const s = setup();
+        s.autoUpdater.autoInstallOnAppQuit = true;
+        s.autoUpdater.install.mockImplementation(() => {
+            s.calls.push(`install:${s.autoUpdater.autoInstallOnAppQuit}`);
+            return true;
+        });
+
+        const done = s.updater.installNow();
+        expect(s.autoUpdater.autoInstallOnAppQuit).toBe(false);
+        expect(s.autoUpdater.install).not.toHaveBeenCalled();
+
+        s.stopResolve();
+        await done;
+
+        expect(s.autoUpdater.install).toHaveBeenCalledTimes(1);
+        expect(s.autoUpdater.install).toHaveBeenCalledWith(true, true);
+        expect(s.calls).toEqual(['stop:start', 'stop:end', 'install:false', 'exit']);
+    });
+
+    test('isInstalling() is false before installNow(), true right after the call and still true when install() runs', async () => {
+        const s = setup();
+        const seen = [];
+        s.autoUpdater.install.mockImplementation(() => {
+            seen.push(s.updater.isInstalling());
+            return true;
+        });
+        expect(s.updater.isInstalling()).toBe(false);
+
+        const done = s.updater.installNow();
+        expect(s.updater.isInstalling()).toBe(true);
+
+        s.stopResolve();
+        await done;
+
+        expect(seen).toEqual([true]);
+    });
+
     test('a failed stopApp() does not install and disables install-on-quit before exit', async () => {
         const s = setup();
         s.stopApp.mockImplementation(() => Promise.reject(new Error('stop failed')));
@@ -234,6 +272,32 @@ describe('release build flag in package.json', () => {
         expect(fakeUpdater.setFeedURL).not.toHaveBeenCalled();
         expect(fakeUpdater.checkForUpdates).not.toHaveBeenCalled();
         updaterModule.stop();
+    });
+
+    test('the module facade reports isInstalling() of the initialised instance and false without init', async () => {
+        const fakeUpdater = {
+            on:              jest.fn(),
+            setFeedURL:      jest.fn(),
+            checkForUpdates: jest.fn(() => Promise.resolve(null)),
+            install:         jest.fn(() => true),
+        };
+        let updaterModule;
+        let resolveStop;
+        let instance;
+        jest.isolateModules(() => {
+            jest.doMock('../../package.json', () => ({ name: 'x', releaseBuild: true }));
+            jest.doMock('electron-updater', () => ({ autoUpdater: fakeUpdater }), { virtual: true });
+            updaterModule = require('../../native/updater');
+            expect(updaterModule.isInstalling()).toBe(false);
+            instance = updaterModule.init(jest.fn(() => new Promise((resolve) => { resolveStop = resolve; })));
+        });
+        expect(updaterModule.isInstalling()).toBe(false);
+
+        const done = instance.installNow();
+        expect(updaterModule.isInstalling()).toBe(true);
+
+        resolveStop();
+        await done;
     });
 
     test('starts the updater when the flag is true', () => {

@@ -110,6 +110,8 @@ function createUpdater({
     async function installNow() {
         if (installing) return;
         installing = true;
+        // Штатная установка на 'quit' (в т.ч. после неудачной остановки) не должна стартовать инсталлятор раньше install() ниже.
+        autoUpdater.autoInstallOnAppQuit = false;
         try {
             await stopApp();
             // install() синхронен и сам помечает, что установка уже запущена, поэтому событие
@@ -119,9 +121,6 @@ function createUpdater({
             }
         } catch (err) {
             logger.error(err);
-            // Остановка не удалась: штатный install на 'quit' запустил бы инсталлятор при живых
-            // дочерних процессах — отключаем его до выхода.
-            autoUpdater.autoInstallOnAppQuit = false;
         }
         exitApp();
     }
@@ -232,7 +231,7 @@ function createUpdater({
         if (started) autoUpdater.autoInstallOnAppQuit = false;
     }
 
-    return { start, stop, checkManually, disableInstallOnQuit, installNow, isReleaseBuild };
+    return { start, stop, checkManually, disableInstallOnQuit, installNow, isInstalling: () => installing, isReleaseBuild };
 }
 
 let instance = null;
@@ -261,4 +260,5 @@ module.exports = {
     stop:                 () => instance && instance.stop(),
     checkManually:        () => (instance ? instance.checkManually() : Promise.resolve()),
     disableInstallOnQuit: () => instance && instance.disableInstallOnQuit(),
+    isInstalling:         () => Boolean(instance && instance.isInstalling()),
 };
