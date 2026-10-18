@@ -188,6 +188,21 @@ describe('main', () => {
         expect(versionAtGeneration).toBe('2.3.4');
     });
 
+    test('stamps releaseBuild=false into package.json on a non-release build', () => {
+        main(sandbox);
+
+        expect(JSON.parse(fs.readFileSync(sandbox.pkgPath, 'utf8')).releaseBuild).toBe(false);
+    });
+
+    test('stamps releaseBuild=true into package.json on a "vX.Y.Z" tag build', () => {
+        process.env.GITHUB_REF_TYPE = 'tag';
+        process.env.GITHUB_REF_NAME = 'v2.3.4';
+
+        main(sandbox);
+
+        expect(JSON.parse(fs.readFileSync(sandbox.pkgPath, 'utf8')).releaseBuild).toBe(true);
+    });
+
     test('a failing generation fails the build before assets are built', () => {
         const { main: buildAssets } = require('../../scripts/build-assets');
         buildAssets.mockClear();

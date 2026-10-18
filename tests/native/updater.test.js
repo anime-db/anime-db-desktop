@@ -201,3 +201,45 @@ describe('errors', () => {
         s.updater.stop();
     });
 });
+
+describe('release build flag in package.json', () => {
+    afterEach(() => {
+        jest.dontMock('../../package.json');
+        jest.dontMock('electron-updater');
+    });
+
+    function initWithPackage(pkg) {
+        const fakeUpdater = {
+            on:              jest.fn(),
+            setFeedURL:      jest.fn(),
+            checkForUpdates: jest.fn(() => Promise.resolve(null)),
+        };
+        let updaterModule;
+        jest.isolateModules(() => {
+            jest.doMock('../../package.json', () => pkg);
+            jest.doMock('electron-updater', () => ({ autoUpdater: fakeUpdater }), { virtual: true });
+            updaterModule = require('../../native/updater');
+            updaterModule.init(jest.fn(() => Promise.resolve()));
+        });
+        return { updaterModule, fakeUpdater };
+    }
+
+    test.each([
+        ['is missing', { name: 'x' }],
+        ['is false', { name: 'x', releaseBuild: false }],
+    ])('does not start the updater when the flag %s', (_label, pkg) => {
+        const { updaterModule, fakeUpdater } = initWithPackage(pkg);
+        updaterModule.start();
+        expect(fakeUpdater.on).not.toHaveBeenCalled();
+        expect(fakeUpdater.setFeedURL).not.toHaveBeenCalled();
+        expect(fakeUpdater.checkForUpdates).not.toHaveBeenCalled();
+        updaterModule.stop();
+    });
+
+    test('starts the updater when the flag is true', () => {
+        const { updaterModule, fakeUpdater } = initWithPackage({ name: 'x', releaseBuild: true });
+        updaterModule.start();
+        expect(fakeUpdater.checkForUpdates).toHaveBeenCalled();
+        updaterModule.stop();
+    });
+});

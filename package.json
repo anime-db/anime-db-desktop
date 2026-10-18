@@ -5,6 +5,7 @@
     "author": "Peter Gribanov <info@peter-gribanov.ru>",
     "license": "GPL-3.0-or-later",
     "main": "native/index.js",
+    "releaseBuild": false,
     "scripts": {
         "start": "npm run assets && electron .",
         "assets": "node scripts/build-assets.js",
