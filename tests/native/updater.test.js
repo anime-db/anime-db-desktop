@@ -77,6 +77,19 @@ describe('install ordering', () => {
         expect(s.autoUpdater.quitAndInstall).not.toHaveBeenCalled();
         s.updater.stop();
     });
+
+    test('a failed stopApp() does not install and disables install-on-quit before exit', async () => {
+        const s = setup();
+        s.stopApp.mockImplementation(() => Promise.reject(new Error('stop failed')));
+        s.autoUpdater.autoInstallOnAppQuit = true;
+        s.exitApp.mockImplementation(() => s.calls.push(`exit:${s.autoUpdater.autoInstallOnAppQuit}`));
+
+        await s.updater.installNow();
+
+        expect(s.autoUpdater.install).not.toHaveBeenCalled();
+        expect(s.calls).toEqual(['exit:false']);
+        expect(s.logger.error).toHaveBeenCalled();
+    });
 });
 
 describe('release-build gate', () => {

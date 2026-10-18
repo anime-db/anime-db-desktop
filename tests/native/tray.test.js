@@ -96,4 +96,9 @@ test('the "Check for updates" entry appears only when a handler is given and run
     const [menuTemplate] = mockTray.setContextMenu.mock.calls[0];
     menuTemplate.find((item) => item.label === 'Check for updates').click();
     expect(onCheck).toHaveBeenCalledTimes(1);
+
+    mockTray.setContextMenu.mockClear();
+    tray.create(fakeWindow, jest.fn());
+    const [plainTemplate] = mockTray.setContextMenu.mock.calls[0];
+    expect(plainTemplate.map((item) => item.label)).not.toContain('Check for updates');
 });

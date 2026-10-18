@@ -27,10 +27,13 @@ const { app, dialog } = require('electron');
 const paths = require('../paths');
 const i18n  = require('../i18n');
 const { getLocale } = require('../config');
-const { todayStr }  = require('../supervisor/logrotate');
+const { todayStr, pruneOldLogs } = require('../supervisor/logrotate');
 
 /** Периодичность автоматической проверки обновлений, в часах. */
 const CHECK_INTERVAL_HOURS = 6;
+
+/** Сколько файлов updater-<дата>.log хранить. */
+const LOG_MAX = 7;
 
 /** Поле package.json, которое scripts/build.js штампует на каждой сборке (true — сборка по тегу vX.Y.Z). */
 const RELEASE_BUILD_FIELD = 'releaseBuild';
@@ -116,6 +119,9 @@ function createUpdater({
             }
         } catch (err) {
             logger.error(err);
+            // Остановка не удалась: штатный install на 'quit' запустил бы инсталлятор при живых
+            // дочерних процессах — отключаем его до выхода.
+            autoUpdater.autoInstallOnAppQuit = false;
         }
         exitApp();
     }
@@ -205,6 +211,11 @@ function createUpdater({
     function start() {
         if (!isReleaseBuild || started) return;
         started = true;
+        try {
+            pruneOldLogs(path.join(paths.getRuntimeDir(), 'log'), 'updater', LOG_MAX);
+        } catch {
+            // лог необязателен
+        }
         configure();
         backgroundCheck();
         timer = setInterval(backgroundCheck, CHECK_INTERVAL_HOURS * 3600 * 1000);
