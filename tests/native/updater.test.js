@@ -183,7 +183,7 @@ describe('relaunch path', () => {
 });
 
 describe('relaunch vs install', () => {
-    test('"Restart now" after disableInstallOnQuit() does not install, keeps isInstalling() false and exits once', async () => {
+    test('"Restart now" after disableInstallOnQuit() does not install, keeps isInstalling() false and leaves the exit to relaunch()', async () => {
         const s = setup();
         s.updater.disableInstallOnQuit();
         await s.updater.installNow();

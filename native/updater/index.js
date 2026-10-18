@@ -99,7 +99,7 @@ function createUpdater({
     let timer = null;
     let started = false;
     let installing = false;
-    let relaunching = false;
+    let installBlocked = false;
 
     const t = (key, params) => i18n.t(key, locale(), params);
 
@@ -109,15 +109,15 @@ function createUpdater({
      * autoUpdater.quitAndInstall() не используется: он спавнит инсталлятор синхронно, до stop().
      */
     async function installNow() {
-        // Идёт relaunch(): инсталлятор убил бы новый экземпляр. Обновление останется скачанным.
-        if (installing || relaunching) return;
+        // Установка заблокирована: идёт relaunch() или остановка не удалась. Обновление останется скачанным.
+        if (installing || installBlocked) return;
         installing = true;
         // Штатная установка на 'quit' (в т.ч. после неудачной остановки) не должна стартовать инсталлятор раньше install() ниже.
         autoUpdater.autoInstallOnAppQuit = false;
         try {
             await stopApp();
-            // relaunch() мог начаться, пока шла остановка: install() не вызываем, выход доводим штатно.
-            if (relaunching) {
+            // Установка могла быть заблокирована, пока шла остановка: install() не вызываем, выход доводим штатно.
+            if (installBlocked) {
                 installing = false;
                 exitApp();
                 return;
@@ -244,9 +244,9 @@ function createUpdater({
         timer = null;
     }
 
-    /** Путь relaunch(): новый экземпляр не должен быть убит инсталлятором при выходе. */
+    /** Путь relaunch() и неудачной остановки: установка при выходе блокируется (иначе инсталлятор убил бы новый экземпляр). */
     function disableInstallOnQuit() {
-        relaunching = true;
+        installBlocked = true;
         if (started) autoUpdater.autoInstallOnAppQuit = false;
     }
 
