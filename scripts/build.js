@@ -95,16 +95,16 @@ function generateInstallerPlugins(run = execSync, appPath = appDir) {
     }
 }
 
-function main() {
-    syncVersionFromTag();
-    writeBuildId();
+function main({ appPath = appDir, pkgPath = packageJsonPath, buildIdOutPath = buildIdPath } = {}) {
+    syncVersionFromTag(process.env.GITHUB_REF_NAME, process.env.GITHUB_REF_TYPE, pkgPath);
+    writeBuildId(buildIdOutPath);
 
-    execSync('composer install --no-dev --optimize-autoloader', { cwd: appDir, stdio: 'inherit' });
+    execSync('composer install --no-dev --optimize-autoloader', { cwd: appPath, stdio: 'inherit' });
 
-    fs.rmSync(path.join(appDir, 'var', 'cache'), { recursive: true, force: true });
-    fs.rmSync(path.join(appDir, 'var', 'log'), { recursive: true, force: true });
+    fs.rmSync(path.join(appPath, 'var', 'cache'), { recursive: true, force: true });
+    fs.rmSync(path.join(appPath, 'var', 'log'), { recursive: true, force: true });
 
-    generateInstallerPlugins();
+    generateInstallerPlugins(execSync, appPath);
 
     // Фронтенд-ассеты собираются отдельным скриптом, потому что их нужно уметь собрать и без
     // остальной части этого шага: `npm start` зовёт только его. Тащить сюда весь prebuild

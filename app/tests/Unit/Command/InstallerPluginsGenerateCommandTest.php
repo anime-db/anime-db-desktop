@@ -181,6 +181,36 @@ final class InstallerPluginsGenerateCommandTest extends TestCase
         $this->assertSame($before, glob(sys_get_temp_dir().'/anime-installer-plugins-*') ?: []);
     }
 
+    public function testPluginContractsAxisKeepsOnlyVersionsCompatibleWithInstalledContracts(): void
+    {
+        $registry = $this->registry([
+            $this->plugin('animedb-compatible', 'Compatible', 'local', '>=2.0.0', '^1.0'),
+            $this->plugin('animedb-incompatible', 'Incompatible', 'local', '>=2.0.0', '^2.0'),
+            $this->plugin('animedb-unconstrained', 'Unconstrained', 'local', '>=2.0.0'),
+        ]);
+
+        $tester = $this->execute($this->serving($registry, $this->sign($registry)), pluginContractsVersion: '1.3.0');
+
+        $this->assertSame(Command::SUCCESS, $tester->getStatusCode());
+        $nsh = $this->generated();
+        $this->assertStringContainsString('"Compatible"', $nsh);
+        $this->assertStringContainsString('"Unconstrained"', $nsh);
+        $this->assertStringNotContainsString('Incompatible', $nsh);
+        $this->assertStringNotContainsString('animedb-incompatible', $nsh);
+        $this->assertStringContainsString('!define ANIMEDB_PLUGINS_COUNT 2', $nsh);
+    }
+
+    public function testOnlyPluginsBlockedByPluginContractsLeaveThePageUndeclared(): void
+    {
+        $registry = $this->registry([$this->plugin('animedb-incompatible', 'Incompatible', 'local', '>=2.0.0', '^2.0')]);
+
+        $tester = $this->execute($this->serving($registry, $this->sign($registry)), pluginContractsVersion: '1.3.0');
+
+        $this->assertSame(Command::SUCCESS, $tester->getStatusCode());
+        $this->assertStringNotContainsString('ANIMEDB_PLUGINS_PAGE', $this->generated());
+        $this->assertStringNotContainsString('animedb-incompatible', $this->generated());
+    }
+
     /**
      * @param list<array<string, mixed>> $plugins
      */
@@ -192,7 +222,7 @@ final class InstallerPluginsGenerateCommandTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function plugin(string $id, string $name, string $type, string $core): array
+    private function plugin(string $id, string $name, string $type, string $core, ?string $contracts = null): array
     {
         $manifest = [
             'id' => $id,
@@ -211,7 +241,10 @@ final class InstallerPluginsGenerateCommandTest extends TestCase
         return [
             'id' => $id,
             'manifest' => $manifest,
-            'versions' => [['version' => '1.4.2', 'core' => $core, 'sha256' => 'sha-1.4.2']],
+            'versions' => [array_filter(
+                ['version' => '1.4.2', 'core' => $core, 'plugin_contracts' => $contracts, 'sha256' => 'sha-1.4.2'],
+                static fn (?string $value): bool => $value !== null,
+            )],
         ];
     }
 
@@ -220,14 +253,14 @@ final class InstallerPluginsGenerateCommandTest extends TestCase
         return $this->execute($this->serving($registryJson, $this->sign($registryJson)));
     }
 
-    private function execute(MockHttpClient $httpClient, ?string $coreVersion = '2.5.0'): CommandTester
+    private function execute(MockHttpClient $httpClient, ?string $coreVersion = '2.5.0', ?string $pluginContractsVersion = null): CommandTester
     {
         $tester = new CommandTester(new InstallerPluginsGenerateCommand(
             new PluginRegistryFetcher($httpClient),
             new PluginRegistrySignatureVerifier([$this->publicKey]),
             new NullLogger(),
             $coreVersion,
-            null,
+            $pluginContractsVersion,
             $this->workDir.'/app',
         ));
         $tester->execute(['--output' => $this->outputPath]);

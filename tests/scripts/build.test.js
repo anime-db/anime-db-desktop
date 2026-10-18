@@ -143,8 +143,18 @@ describe('generateInstallerPlugins', () => {
 describe('main', () => {
     const ORIGINAL_ENV = { ...process.env };
 
+    let sandbox;
+
     beforeEach(() => {
         execSync.mockReset();
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'build-main-test-'));
+        sandbox = {
+            appPath: path.join(root, 'app'),
+            pkgPath: writePackageJson('0.0.1'),
+            buildIdOutPath: path.join(root, 'build-id.txt'),
+        };
+        fs.mkdirSync(path.join(sandbox.appPath, 'var', 'cache'), { recursive: true });
+        fs.mkdirSync(path.join(sandbox.appPath, 'var', 'log'), { recursive: true });
         delete process.env.GITHUB_REF_TYPE;
         delete process.env.GITHUB_REF_NAME;
     });
@@ -154,7 +164,7 @@ describe('main', () => {
     });
 
     test('generates the installer plugin list after "composer install --no-dev"', () => {
-        main();
+        main(sandbox);
 
         const commands = execSync.mock.calls.map((call) => call[0]);
         const composer = commands.findIndex((c) => c.startsWith('composer install --no-dev'));
@@ -170,7 +180,7 @@ describe('main', () => {
             if (command.includes('app:installer:plugins')) throw new Error('registry is not fresh');
         });
 
-        expect(() => main()).toThrow('registry is not fresh');
+        expect(() => main(sandbox)).toThrow('registry is not fresh');
         expect(buildAssets).not.toHaveBeenCalled();
     });
 });
