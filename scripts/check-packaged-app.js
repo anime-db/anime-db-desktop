@@ -26,7 +26,7 @@
  * build.yml after `npm run build` and before anything is published, so a red check means "no
  * release", not "a release that installed copies cannot update from".
  *
- * Two checks:
+ * Three checks:
  *
  * 1. Dependency closure. Every production dependency of the packaged app, transitively, must be
  *    resolvable INSIDE dist/win-unpacked/resources/app. A check of the electron-updater directory
@@ -40,6 +40,12 @@
  *    installer named in its files[].url (the top-level `path` is a legacy fallback), so latest.yml
  *    must exist and name an installer that exists in dist/ along with its blockmap. A silently missing latest.yml would publish a green release that no
  *    installed copy can see.
+ *
+ * 3. Release build flag. The packaged resources/app/package.json must carry the "releaseBuild"
+ *    flag the auto-updater is gated on (native/updater): on a tag build (GITHUB_REF_TYPE=tag) it
+ *    must be true and "version" must equal GITHUB_REF_NAME without the "v" prefix; otherwise it
+ *    must be false. A flag lost on the way to packaging would ship a release whose updater is
+ *    silently off, and the next release would never reach those copies.
  */
 
 const fs = require('fs');
@@ -167,14 +173,34 @@ function checkUpdateMetadata(distDir) {
     return problems;
 }
 
+/**
+ * @returns {string[]} problems found; empty when releaseBuild and version agree with the CI ref
+ */
+function checkReleaseBuildFlag(appDir, refType = process.env.GITHUB_REF_TYPE, refName = process.env.GITHUB_REF_NAME) {
+    const pkg = readJson(path.join(appDir, 'package.json'));
+    if (refType !== 'tag') {
+        return pkg.releaseBuild === false ? [] : [`releaseBuild is ${JSON.stringify(pkg.releaseBuild)} in the packaged package.json: expected false on a non-tag build`];
+    }
+
+    const problems = [];
+    if (pkg.releaseBuild !== true) {
+        problems.push(`releaseBuild is ${JSON.stringify(pkg.releaseBuild)} in the packaged package.json: expected true on tag build ${refName}, the auto-updater would be disabled`);
+    }
+    const expectedVersion = (refName ?? '').replace(/^v/, '');
+    if (pkg.version !== expectedVersion) {
+        problems.push(`version ${JSON.stringify(pkg.version)} in the packaged package.json does not match tag ${refName}`);
+    }
+    return problems;
+}
+
 function main(distDir = path.join(rootDir, 'dist')) {
     const appDir = path.join(distDir, 'win-unpacked', 'resources', 'app');
-    const problems = [...checkDependencyClosure(appDir), ...checkUpdateMetadata(distDir)];
+    const problems = [...checkDependencyClosure(appDir), ...checkUpdateMetadata(distDir), ...checkReleaseBuildFlag(appDir)];
     for (const problem of problems) {
         console.error(`::error::${problem}`);
     }
     if (problems.length === 0) {
-        console.log('Packaged app: dependency closure complete, latest.yml matches installer and blockmap.');
+        console.log('Packaged app: dependency closure complete, latest.yml matches installer and blockmap, releaseBuild flag is correct.');
     }
     return problems.length === 0 ? 0 : 1;
 }
@@ -183,4 +209,4 @@ if (require.main === module) {
     process.exitCode = main(process.argv[2]);
 }
 
-module.exports = { checkDependencyClosure, checkUpdateMetadata, resolvePackageDir };
+module.exports = { checkDependencyClosure, checkUpdateMetadata, checkReleaseBuildFlag, resolvePackageDir };

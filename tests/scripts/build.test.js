@@ -48,10 +48,10 @@ describe('syncVersionFromTag', () => {
         expect(JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version).toBe('1.2.3');
     });
 
-    test('stamps a semver pre-release tag ref', () => {
+    test.each(['v1.0.0-rc1', 'v1.0.0+build1', 'v1.0.0-rc1+build1'])('throws on tag %s with a suffix and keeps the version', (tag) => {
         const pkgPath = writePackageJson('0.0.1');
-        syncVersionFromTag('v1.0.0-rc1', 'tag', pkgPath);
-        expect(JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version).toBe('1.0.0-rc1');
+        expect(() => syncVersionFromTag(tag, 'tag', pkgPath)).toThrow(/vX\.Y\.Z/);
+        expect(JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version).toBe('0.0.1');
     });
 
     test('leaves the version untouched when the run was not triggered by a tag (branch build)', () => {
@@ -228,6 +228,7 @@ describe('stampReleaseBuildFlag', () => {
         ['master', 'branch'],
         [undefined, undefined],
         ['v1.0.0-rc1', 'tag'],
+        ['v1.0.0+build1', 'tag'],
     ])('writes false for ref %s (%s)', (ref, type) => {
         const pkgPath = writePackageJson('0.0.1');
         stampReleaseBuildFlag(ref, type, pkgPath);
