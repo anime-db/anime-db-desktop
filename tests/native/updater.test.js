@@ -182,6 +182,31 @@ describe('relaunch path', () => {
     });
 });
 
+describe('relaunch vs install', () => {
+    test('"Restart now" after disableInstallOnQuit() does not install, keeps isInstalling() false and leaves the exit to relaunch()', async () => {
+        const s = setup();
+        s.updater.disableInstallOnQuit();
+        await s.updater.installNow();
+
+        expect(s.autoUpdater.install).not.toHaveBeenCalled();
+        expect(s.updater.isInstalling()).toBe(false);
+        expect(s.exitApp).not.toHaveBeenCalled();
+    });
+
+    test('a relaunch() that starts while installNow() waits for stopApp() cancels install() and exits once', async () => {
+        const s = setup();
+        const done = s.updater.installNow();
+        expect(s.updater.isInstalling()).toBe(true);
+        s.updater.disableInstallOnQuit();
+        s.stopResolve();
+        await done;
+
+        expect(s.autoUpdater.install).not.toHaveBeenCalled();
+        expect(s.updater.isInstalling()).toBe(false);
+        expect(s.exitApp).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('ready dialog', () => {
     test('is async, shown once per version for automatic checks, but again for a manual check', async () => {
         const s = setup();
@@ -225,6 +250,41 @@ describe('errors', () => {
         await s.updater.checkManually();
         expect(s.dialog.showMessageBox.mock.calls[0][0].message).toContain('rate limit exceeded');
         s.updater.stop();
+    });
+
+    test('a rejected downloadPromise of a background check is logged and not left unhandled', async () => {
+        const s = setup();
+        const err = new Error('sha512 checksum mismatch');
+        const downloadPromise = Promise.reject(err);
+        s.autoUpdater.checkForUpdates.mockResolvedValue({ isUpdateAvailable: true, updateInfo: { version: '2.0.0' }, downloadPromise });
+        const unhandled = jest.fn();
+        process.on('unhandledRejection', unhandled);
+        s.updater.start();
+        await tick();
+        await tick();
+        process.removeListener('unhandledRejection', unhandled);
+
+        expect(unhandled).not.toHaveBeenCalled();
+        expect(s.logger.error).toHaveBeenCalledWith(err);
+        expect(s.dialog.showMessageBox).not.toHaveBeenCalled();
+        s.updater.stop();
+    });
+
+    test('a rejected downloadPromise of a manual check is logged and shown in the error dialog', async () => {
+        const s = setup();
+        const err = new Error('sha512 checksum mismatch');
+        s.autoUpdater.checkForUpdates.mockResolvedValue({ isUpdateAvailable: true, updateInfo: { version: '2.0.0' }, downloadPromise: Promise.reject(err) });
+        const unhandled = jest.fn();
+        process.on('unhandledRejection', unhandled);
+        await s.updater.checkManually();
+        await tick();
+        await tick();
+        process.removeListener('unhandledRejection', unhandled);
+
+        expect(unhandled).not.toHaveBeenCalled();
+        expect(s.logger.error).toHaveBeenCalledWith(err);
+        const messages = s.dialog.showMessageBox.mock.calls.map(c => c[0].message);
+        expect(messages.some(m => m.includes('sha512 checksum mismatch'))).toBe(true);
     });
 
     test('manual check reports "no updates" and "downloading"', async () => {

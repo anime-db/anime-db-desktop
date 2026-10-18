@@ -401,7 +401,12 @@ if (!gotLock) {
         const exit = () => {
             if (!updater.isInstalling()) app.exit(0);
         };
-        stopApp().then(exit, exit);
+        // Остановка не удалась — дочерние процессы ещё живы, инсталлятор на 'quit' запускать нельзя.
+        const exitFailed = () => {
+            updater.disableInstallOnQuit();
+            exit();
+        };
+        stopApp().then(exit, exitFailed);
     });
 
     /**
