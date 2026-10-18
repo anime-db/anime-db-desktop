@@ -25,7 +25,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { syncVersionFromTag, writeBuildId } = require('../../scripts/build');
+jest.mock('child_process', () => ({ execSync: jest.fn() }));
+jest.mock('../../scripts/build-assets', () => ({ main: jest.fn() }));
+
+const { execSync } = require('child_process');
+const { syncVersionFromTag, writeBuildId, generateInstallerPlugins, main } = require('../../scripts/build');
 
 function writePackageJson(version) {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'build-test-')), 'package.json');
@@ -103,5 +107,95 @@ describe('writeBuildId', () => {
         writeBuildId(idPath);
 
         expect(fs.readFileSync(idPath, 'utf8')).toMatch(/^local-\d+$/);
+    });
+});
+
+describe('generateInstallerPlugins', () => {
+    function appDirWithCache() {
+        const appPath = fs.mkdtempSync(path.join(os.tmpdir(), 'build-app-test-'));
+        fs.mkdirSync(path.join(appPath, 'var', 'cache', 'prod'), { recursive: true });
+        return appPath;
+    }
+
+    test('runs the console command and removes the Symfony cache it created', () => {
+        const appPath = appDirWithCache();
+        const run = jest.fn();
+
+        generateInstallerPlugins(run, appPath);
+
+        expect(run).toHaveBeenCalledTimes(1);
+        expect(run.mock.calls[0][0]).toMatch(/bin\/console app:installer:plugins/);
+        expect(run.mock.calls[0][1]).toMatchObject({ cwd: appPath });
+        expect(fs.existsSync(path.join(appPath, 'var', 'cache'))).toBe(false);
+    });
+
+    test('propagates a failing exit code and still removes the cache', () => {
+        const appPath = appDirWithCache();
+        const run = jest.fn(() => {
+            throw new Error('Command failed');
+        });
+
+        expect(() => generateInstallerPlugins(run, appPath)).toThrow('Command failed');
+        expect(fs.existsSync(path.join(appPath, 'var', 'cache'))).toBe(false);
+    });
+});
+
+describe('main', () => {
+    const ORIGINAL_ENV = { ...process.env };
+
+    let sandbox;
+
+    beforeEach(() => {
+        execSync.mockReset();
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'build-main-test-'));
+        sandbox = {
+            appPath: path.join(root, 'app'),
+            pkgPath: writePackageJson('0.0.1'),
+            buildIdOutPath: path.join(root, 'build-id.txt'),
+        };
+        fs.mkdirSync(path.join(sandbox.appPath, 'var', 'cache'), { recursive: true });
+        fs.mkdirSync(path.join(sandbox.appPath, 'var', 'log'), { recursive: true });
+        delete process.env.GITHUB_REF_TYPE;
+        delete process.env.GITHUB_REF_NAME;
+    });
+
+    afterEach(() => {
+        process.env = { ...ORIGINAL_ENV };
+    });
+
+    test('generates the installer plugin list after "composer install --no-dev"', () => {
+        main(sandbox);
+
+        const commands = execSync.mock.calls.map((call) => call[0]);
+        const composer = commands.findIndex((c) => c.startsWith('composer install --no-dev'));
+        const generate = commands.findIndex((c) => c.includes('app:installer:plugins'));
+        expect(composer).toBeGreaterThanOrEqual(0);
+        expect(generate).toBeGreaterThan(composer);
+    });
+
+    test('generates the installer plugin list after the version is synced from the release tag', () => {
+        process.env.GITHUB_REF_TYPE = 'tag';
+        process.env.GITHUB_REF_NAME = 'v2.3.4';
+        let versionAtGeneration = null;
+        execSync.mockImplementation((command) => {
+            if (command.includes('app:installer:plugins')) {
+                versionAtGeneration = JSON.parse(fs.readFileSync(sandbox.pkgPath, 'utf8')).version;
+            }
+        });
+
+        main(sandbox);
+
+        expect(versionAtGeneration).toBe('2.3.4');
+    });
+
+    test('a failing generation fails the build before assets are built', () => {
+        const { main: buildAssets } = require('../../scripts/build-assets');
+        buildAssets.mockClear();
+        execSync.mockImplementation((command) => {
+            if (command.includes('app:installer:plugins')) throw new Error('registry is not fresh');
+        });
+
+        expect(() => main(sandbox)).toThrow('registry is not fresh');
+        expect(buildAssets).not.toHaveBeenCalled();
     });
 });

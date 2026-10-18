@@ -29,6 +29,9 @@ app/public/css/app.rtl.css
 # Отпечаток сборки — стемпуется на каждой сборке в scripts/build.js#writeBuildId, не хранится в git
 scripts/build-id.txt
 
+# Список плагинов для страницы установщика — генерируется при сборке (app:installer:plugins)
+build/installer-plugins.nsh
+
 # Electron build output
 dist/
 out/
