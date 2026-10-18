@@ -49,12 +49,13 @@
 ; that file declares no plugins, ANIMEDB_PLUGINS_PAGE is not defined and none of the code below is
 ; compiled in. A missing file is always a build error (the generator was skipped), so the include
 ; is deliberately fatal.
-!include "${BUILD_RESOURCES_DIR}\installer-plugins.nsh"
-
+;
 ; electron-builder compiles this file twice, for the installer and for the uninstaller (where
-; BUILD_UNINSTALLER is defined). The page functions are installer-only: in the uninstaller pass they
-; would be unreferenced (warning 6010, an error with warningsAsErrors).
+; BUILD_UNINSTALLER is defined). The page functions and the generated file's variables are
+; installer-only: in the uninstaller pass they would be unreferenced (warnings 6001/6010, errors
+; with warningsAsErrors).
 !ifndef BUILD_UNINSTALLER
+!include "${BUILD_RESOURCES_DIR}\installer-plugins.nsh"
 !ifdef ANIMEDB_PLUGINS_PAGE
 
 !include LogicLib.nsh

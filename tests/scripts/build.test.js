@@ -173,6 +173,21 @@ describe('main', () => {
         expect(generate).toBeGreaterThan(composer);
     });
 
+    test('generates the installer plugin list after the version is synced from the release tag', () => {
+        process.env.GITHUB_REF_TYPE = 'tag';
+        process.env.GITHUB_REF_NAME = 'v2.3.4';
+        let versionAtGeneration = null;
+        execSync.mockImplementation((command) => {
+            if (command.includes('app:installer:plugins')) {
+                versionAtGeneration = JSON.parse(fs.readFileSync(sandbox.pkgPath, 'utf8')).version;
+            }
+        });
+
+        main(sandbox);
+
+        expect(versionAtGeneration).toBe('2.3.4');
+    });
+
     test('a failing generation fails the build before assets are built', () => {
         const { main: buildAssets } = require('../../scripts/build-assets');
         buildAssets.mockClear();
