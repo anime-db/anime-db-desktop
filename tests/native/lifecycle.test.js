@@ -71,6 +71,7 @@ jest.mock('../../native/window/splash', () => ({ createSplash: jest.fn() }));
 jest.mock('../../native/tray', () => ({ create: jest.fn(), setState: jest.fn() }));
 jest.mock('../../native/updater', () => ({
     init: jest.fn(), start: jest.fn(), stop: jest.fn(), checkManually: jest.fn(), disableInstallOnQuit: jest.fn(),
+    isInstalling: jest.fn(() => false),
 }));
 jest.mock('../../native/ws-client', () => ({ connect: jest.fn(), disconnect: jest.fn(), on: jest.fn() }));
 jest.mock('../../native/proxy', () => ({
@@ -496,6 +497,38 @@ describe('re-entrant stop', () => {
         await new Promise((r) => setTimeout(r, 0));
 
         expect(supervisor.stop).toHaveBeenCalledTimes(1);
+        expect(app.exit).not.toHaveBeenCalled();
+    });
+
+    test('a rejected stop is not cached: before-quit still exits and the next quit retries the stop', async () => {
+        const { app, supervisor, appHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        supervisor.stop.mockImplementationOnce(() => Promise.reject(new Error('boom')));
+
+        appHandlers['before-quit']({ preventDefault: jest.fn() });
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(app.exit).toHaveBeenCalledTimes(1);
+
+        appHandlers['before-quit']({ preventDefault: jest.fn() });
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(supervisor.stop).toHaveBeenCalledTimes(2);
+        expect(app.exit).toHaveBeenCalledTimes(2);
+    });
+
+    test('before-quit does not exit while an update install is in progress', async () => {
+        const { app, supervisor, appHandlers } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        const updater = require('../../native/updater');
+        let resolveStop;
+        supervisor.stop.mockImplementation(() => new Promise((resolve) => { resolveStop = resolve; }));
+
+        appHandlers['before-quit']({ preventDefault: jest.fn() });
+        updater.isInstalling.mockReturnValue(true);
+        resolveStop();
+        await new Promise((r) => setTimeout(r, 0));
+
         expect(app.exit).not.toHaveBeenCalled();
     });
 });

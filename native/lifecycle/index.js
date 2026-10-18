@@ -167,8 +167,13 @@ function stopApp() {
     updater.stop();
     wsClient.disconnect();
     storageWatcher.getWatcher().stop();
-    stopping = supervisor.stop();
-    return stopping;
+    const current = supervisor.stop();
+    stopping = current;
+    // Неудавшаяся остановка не кешируется: следующий выход должен суметь повторить её.
+    current.catch(() => {
+        if (stopping === current) stopping = null;
+    });
+    return current;
 }
 
 updater.init(stopApp);
@@ -391,7 +396,12 @@ if (!gotLock) {
         event.preventDefault();
         // Остановка уже идёт — выход завершит тот, кто её начал.
         if (stopping) return;
-        stopApp().then(() => app.exit(0));
+        // Выход при любом исходе остановки (process.on('exit') добьёт процессы через killSync()).
+        // Если идёт установка обновления, выход завершит installNow() — строго после install().
+        const exit = () => {
+            if (!updater.isInstalling()) app.exit(0);
+        };
+        stopApp().then(exit, exit);
     });
 
     /**
