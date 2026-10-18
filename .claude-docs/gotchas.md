@@ -585,3 +585,11 @@ Symfony при наличии параметра `%count%` прогоняет с
 - **Локаль в фоне:** `WorkerLocaleSubscriber` на каждое сообщение выставляет локаль translator'а (сохранённая,
   согласованная с `AvailableLocalesProvider::all()`); `CatalogReader`/`AnimeViewFactory` вне запроса читают её у
   translator'а, а не берут `en`.
+
+## `userData` собранного приложения — `%APPDATA%\anime-db-desktop`, а не `%APPDATA%\AnimeDB`
+
+Electron берёт имя приложения из `productName`/`name` верхнего уровня упакованного `package.json`; там только
+`name: anime-db-desktop`. `build.productName` задаёт лишь имя exe и ярлыков (electron-builder не переносит его в
+упакованный `package.json`). NSIS-скрипты, которые ходят в `userData` (`build/installer.nsh`), обязаны использовать
+`$APPDATA\anime-db-desktop`. Появление `productName` верхнего уровня или `build.extraMetadata.productName` сменило бы
+`userData` и потребовало миграции данных; от этого страхует `tests/native/installer-paths.test.js`.

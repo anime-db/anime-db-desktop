@@ -41,7 +41,7 @@
 !macroend
 
 ; Plugin selection page (issue #1084). The installer neither downloads nor installs plugins: it
-; only records the chosen plugin ids in "$APPDATA\AnimeDB\installer-plugins.json", and the app
+; only records the chosen plugin ids in "$APPDATA\anime-db-desktop\installer-plugins.json", and the app
 ; installs them on its first start through the same code path as the plugin market.
 ;
 ; The list of plugins comes from build/installer-plugins.nsh, generated at build time by
@@ -77,16 +77,17 @@ Var AnimedbPluginsPageShown
 ; install reliably), no earlier selection file, not a silent run, and only for the current user
 ; (in the "all users" mode $APPDATA points at ProgramData while the app reads the user profile).
 Function animedbPluginsPageCreate
+  StrCpy $AnimedbPluginsPageShown ""
   ${If} ${Silent}
     Abort
   ${EndIf}
   ${If} $installMode != "CurrentUser"
     Abort
   ${EndIf}
-  ${If} ${FileExists} "$APPDATA\AnimeDB\data.db"
+  ${If} ${FileExists} "$APPDATA\anime-db-desktop\data.db"
     Abort
   ${EndIf}
-  ${If} ${FileExists} "$APPDATA\AnimeDB\installer-plugins.json"
+  ${If} ${FileExists} "$APPDATA\anime-db-desktop\installer-plugins.json"
     Abort
   ${EndIf}
 
@@ -113,8 +114,8 @@ FunctionEnd
 ; Written here rather than on the page, so that a cancelled installation leaves no trace.
 !macro customInstall
   ${If} $AnimedbPluginsPageShown == "1"
-    CreateDirectory "$APPDATA\AnimeDB"
-    FileOpen $0 "$APPDATA\AnimeDB\installer-plugins.json" w
+    CreateDirectory "$APPDATA\anime-db-desktop"
+    FileOpen $0 "$APPDATA\anime-db-desktop\installer-plugins.json" w
     FileWrite $0 '{"plugins":[$AnimedbPluginsJson]}'
     FileClose $0
   ${EndIf}
