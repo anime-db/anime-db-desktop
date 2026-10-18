@@ -41,6 +41,13 @@ All paths below are relative to the AnimeDB installation directory.
 | Bootstrap                                                                                    | 5.3.8               | MIT                                                  | CSS and JS, loaded by the web UI                                                  | `texts/bootstrap-MIT.txt`                                         |
 | Bootstrap Icons                                                                              | 1.13.1              | MIT                                                  | SVG files copied into resources/app/app/templates/icons/, inlined into the web UI | `texts/bootstrap-icons-MIT.txt`                                   |
 | PHP libraries under `app/vendor/`                                                            | per package         | MIT, BSD-3-Clause, GPL-3.0-or-later                  | interpreted PHP sources                                                           | `COMPOSER-PACKAGES.md`, one license file per package directory    |
+| electron-updater and its npm dependencies                                                    | per package         | MIT, ISC, BlueOak-1.0.0, Python-2.0                  | JavaScript, loaded by the application                                             | per-package `LICENSE`; `texts/lazy-val-MIT.txt`                   |
+
+The npm packages under `electron-updater` are argparse, builder-util-runtime, debug,
+fs-extra, graceful-fs, js-yaml, jsonfile, lazy-val, lodash.escaperegexp,
+lodash.isequal, ms, sax, semver, tiny-typed-emitter and universalify. Every one
+ships its own `LICENSE` file except `lazy-val`, whose MIT text is kept in
+`texts/lazy-val-MIT.txt`.
 
 Versions marked as read from the binaries were taken from the PE version
 resources and embedded strings of the files actually shipped, not from

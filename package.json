@@ -67,7 +67,8 @@
                 "ru_RU"
             ],
             "include": "build/installer.nsh",
-            "license": "build/license.txt"
+            "license": "build/license.txt",
+            "artifactName": "AnimeDB-Setup-${version}.${ext}"
         },
         "files": [
             "native/**",
@@ -78,7 +79,6 @@
             "scripts/build-id.txt",
             "!app/assets/**",
             "!app/var/**",
-            "!node_modules/**",
             "!resources/third-party-licenses/**"
         ],
         "extraFiles": [
@@ -91,6 +91,14 @@
                 "to": "THIRD-PARTY-LICENSES"
             }
         ],
-        "asar": false
+        "asar": false,
+        "publish": {
+            "provider": "github",
+            "owner": "anime-db",
+            "repo": "anime-db-desktop"
+        }
+    },
+    "dependencies": {
+        "electron-updater": "^6.8.9"
     }
 }
