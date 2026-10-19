@@ -151,22 +151,19 @@ describe('notification delivery', () => {
 });
 
 describe('live toast retention', () => {
-    test('a click after close still reaches onToastClick', () => {
+    test('close does not release the toast: it is still held until click', () => {
         const { delivery, toasts, onToastClick } = setup();
         delivery.handle(event());
-        toasts[0].handlers.close?.();
-        toasts[0].handlers.click();
+        expect(toasts[0].handlers.close).toBeUndefined();
 
-        expect(onToastClick).toHaveBeenCalledWith('/x');
-    });
-
-    test('close does not release the toast: closeAll still closes it', () => {
-        const { delivery, toasts } = setup();
-        delivery.handle(event());
-        toasts[0].handlers.close?.();
         delivery.closeAll();
-
         expect(toasts[0].close).toHaveBeenCalledTimes(1);
+
+        delivery.handle(event({ id: 2 }));
+        toasts[1].handlers.click();
+        expect(onToastClick).toHaveBeenCalledWith('/x');
+        delivery.closeAll();
+        expect(toasts[1].close).not.toHaveBeenCalled();
     });
 
     test.each(['click', 'failed'])('%s releases the toast', (name) => {
