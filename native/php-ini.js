@@ -124,7 +124,7 @@ function appendMissingIniDirectives(iniPath, extensionDir) {
     }
 
     if (missingLines.length > 0) {
-        content += `\n; Added by anime-db-desktop after an application upgrade\n${missingLines.join('\n')}\n`;
+        content += `\n; Added by AnimeDB after an application upgrade\n${missingLines.join('\n')}\n`;
         changed = true;
     }
 

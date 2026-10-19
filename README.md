@@ -28,7 +28,7 @@
 - **SQLite** — источник истины (данные каталога).
 - **Meilisearch** (Community Edition, MIT) — поисковый индекс поверх SQLite.
 
-Данные и рантайм-файлы хранятся в `AppData/anime-db-desktop/` пользователя, а не в каталоге
+Данные и рантайм-файлы хранятся в `AppData/AnimeDB/` пользователя, а не в каталоге
 установки.
 
 ### Стек
@@ -174,7 +174,7 @@ workflow `build.yml`) — до отдельного решения после н
 - сервер — боевой FrankenPHP с `app/Caddyfile` (воркер, `try_files` в Caddy), `APP_ENV=prod`,
   перед стартом выполняется `cache:warmup`; `php -S` и `scripts/shots/router.php` не используются;
 - данные — копия фикстуры (`scripts/fixture`) на каждый сценарий, включая runtime-каталог
-  Symfony; каталог окружения одновременно `userData` Electron (как `AppData/anime-db-desktop` в бою), поэтому
+  Symfony; каталог окружения одновременно `userData` Electron (как `AppData/AnimeDB` в бою), поэтому
   `config.json` общий у PHP и native. Точка подключения: `E2E_DATA_DIR` — каталог окружения, который
   используется как есть;
 - main-процесс — `scripts/e2e/main.js`: настоящие `preload.js`, IPC-обработчики `native/dialog` и
