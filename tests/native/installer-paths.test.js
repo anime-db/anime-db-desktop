@@ -28,11 +28,24 @@ const root = path.join(__dirname, '..', '..');
 const pkg  = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const nsh  = fs.readFileSync(path.join(root, 'build', 'installer.nsh'), 'utf8');
 
-// electron-builder deep-merges build.extraMetadata into the packaged package.json, so its name wins.
-const effectiveName = (extraMetadata, name) => (extraMetadata || {}).name || name;
-const appName       = effectiveName((pkg.build || {}).extraMetadata, pkg.name);
+// Electron names the app — and so the userData directory — after `productName || name` of the PACKAGED
+// package.json. electron-builder deep-merges build.extraMetadata into it, so extraMetadata wins.
+// build.productName is NOT carried over: it only names the exe, shortcuts and install directory.
+const effectiveName = (top, extraMetadata) => {
+    const merged = { ...top, ...(extraMetadata || {}) };
+    return merged.productName || merged.name;
+};
+const appName = effectiveName(pkg, (pkg.build || {}).extraMetadata);
 
 describe('installer userData paths', () => {
+    test('the app name, and so userData, is AnimeDB', () => {
+        expect(appName).toBe('AnimeDB');
+    });
+
+    test('top-level productName matches build.productName', () => {
+        expect(pkg.productName).toBe((pkg.build || {}).productName);
+    });
+
     test('every $APPDATA directory in installer.nsh equals the effective app name', () => {
         // (?<![A-Za-z]) keeps $LOCALAPPDATA out; the directory ends at a backslash, quote or end of line.
         const dirs = [...nsh.matchAll(/(?<![A-Za-z])\$APPDATA\\([^\\"\r\n]+)(?=[\\"\r\n]|$)/gm)].map((m) => m[1]);
@@ -43,20 +56,10 @@ describe('installer userData paths', () => {
         }
     });
 
-    test('package.json has no top-level productName', () => {
-        expect(pkg).not.toHaveProperty('productName');
-    });
-
-    test('package.json has no build.extraMetadata.productName', () => {
-        expect(((pkg.build || {}).extraMetadata || {})).not.toHaveProperty('productName');
-    });
-
-    test('build.extraMetadata.name overrides package.json name', () => {
-        expect(effectiveName({name: 'AnimeDB'}, 'anime-db-desktop')).toBe('AnimeDB');
-        expect(effectiveName(undefined, 'anime-db-desktop')).toBe('anime-db-desktop');
-    });
-
-    test('package.json has no build.extraMetadata.name differing from name', () => {
-        expect(appName).toBe(pkg.name);
+    test('build.extraMetadata overrides the top-level name and productName', () => {
+        expect(effectiveName({ name: 'a', productName: 'B' }, undefined)).toBe('B');
+        expect(effectiveName({ name: 'a' }, undefined)).toBe('a');
+        expect(effectiveName({ name: 'a', productName: 'B' }, { productName: 'C' })).toBe('C');
+        expect(effectiveName({ name: 'a' }, { name: 'D' })).toBe('D');
     });
 });
