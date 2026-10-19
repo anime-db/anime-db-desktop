@@ -39,6 +39,7 @@ function setup({ focused = false, visible = true, minimized = false, enabled = t
         this.handlers = {};
         this.on = (event, cb) => { this.handlers[event] = cb; };
         this.show = jest.fn();
+        this.close = jest.fn();
         toasts.push(this);
     });
     Notification.isSupported = jest.fn(() => supported);
@@ -146,6 +147,112 @@ describe('notification delivery', () => {
 
         expect(onToastClick).toHaveBeenNthCalledWith(1, '/x');
         expect(onToastClick).toHaveBeenNthCalledWith(2, null);
+    });
+});
+
+describe('live toast retention', () => {
+    test('close does not release the toast: it is still held until click', () => {
+        const { delivery, toasts, onToastClick } = setup();
+        delivery.handle(event());
+        expect(toasts[0].handlers.close).toBeUndefined();
+
+        delivery.closeAll();
+        expect(toasts[0].close).toHaveBeenCalledTimes(1);
+
+        delivery.handle(event({ id: 2 }));
+        toasts[1].handlers.click();
+        expect(onToastClick).toHaveBeenCalledWith('/x');
+        delivery.closeAll();
+        expect(toasts[1].close).not.toHaveBeenCalled();
+    });
+
+    test.each(['click', 'failed'])('%s releases the toast', (name) => {
+        const { delivery, toasts } = setup();
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        delivery.handle(event());
+        toasts[0].handlers[name]({}, new Error('x'));
+        delivery.closeAll();
+
+        expect(toasts[0].close).not.toHaveBeenCalled();
+    });
+
+    test('failed logs the error', () => {
+        const { delivery, toasts } = setup();
+        const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        delivery.handle(event());
+        const err = new Error('boom');
+        toasts[0].handlers.failed({}, err);
+
+        expect(spy).toHaveBeenCalledWith('[notifications] toast failed:', err);
+        spy.mockRestore();
+    });
+
+    test('the 51st toast evicts the oldest without closing it', () => {
+        const { delivery, toasts } = setup();
+        for (let i = 1; i <= 51; i++) delivery.handle(event({ id: i }));
+        delivery.closeAll();
+
+        expect(toasts[0].close).not.toHaveBeenCalled();
+        for (let i = 1; i < 51; i++) expect(toasts[i].close).toHaveBeenCalledTimes(1);
+    });
+
+    test('a grown occurrences count closes the previous toast before showing the new one', () => {
+        const { delivery, toasts } = setup();
+        delivery.handle(event());
+        delivery.handle(event({ occurrences: 2 }));
+
+        expect(toasts).toHaveLength(2);
+        expect(toasts[0].close).toHaveBeenCalledTimes(1);
+        expect(toasts[0].close.mock.invocationCallOrder[0]).toBeLessThan(toasts[1].show.mock.invocationCallOrder[0]);
+        delivery.closeAll();
+        expect(toasts[1].close).toHaveBeenCalledTimes(1);
+        expect(toasts[0].close).toHaveBeenCalledTimes(1);
+    });
+
+    test('a replayed pair neither closes nor recreates the toast', () => {
+        const { delivery, toasts } = setup();
+        delivery.handle(event());
+        delivery.handle(event());
+
+        expect(toasts).toHaveLength(1);
+        expect(toasts[0].close).not.toHaveBeenCalled();
+    });
+
+    test('closeAll closes every toast and empties the map', () => {
+        const { delivery, toasts } = setup();
+        delivery.handle(event({ id: 1 }));
+        delivery.handle(event({ id: 2 }));
+        delivery.closeAll();
+        delivery.closeAll();
+
+        expect(toasts[0].close).toHaveBeenCalledTimes(1);
+        expect(toasts[1].close).toHaveBeenCalledTimes(1);
+    });
+
+    test('late click/failed of a replaced toast keep the new toast', () => {
+        const { delivery, toasts } = setup();
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        delivery.handle(event());
+        delivery.handle(event({ occurrences: 2 }));
+        toasts[0].handlers.click();
+        toasts[0].handlers.failed({}, new Error('x'));
+        delivery.closeAll();
+
+        expect(toasts[1].close).toHaveBeenCalledTimes(1);
+    });
+
+    test('a replaced toast becomes the newest in the eviction order', () => {
+        const { delivery, toasts } = setup();
+        for (let i = 1; i <= 50; i++) delivery.handle(event({ id: i }));
+        delivery.handle(event({ id: 1, occurrences: 2 }));
+        delivery.handle(event({ id: 51 }));
+        toasts.forEach((t) => t.close.mockClear());
+        delivery.closeAll();
+
+        const closed = toasts.filter((t) => t.close.mock.calls.length > 0);
+        expect(closed).toHaveLength(50);
+        expect(toasts[1].close).not.toHaveBeenCalled(); // id 2 evicted
+        expect(toasts[50].close).toHaveBeenCalledTimes(1); // replacement of id 1 survives
     });
 });
 

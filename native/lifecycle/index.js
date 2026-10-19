@@ -155,6 +155,9 @@ let mainWindow = null;
 // ни вызывать app.exit() раньше, чем остановка завершится.
 let stopping   = null;
 
+// Null until startup creates it; stopApp() can run before that (safe-mode refusal, startup failure).
+let notificationDelivery = null;
+
 /**
  * Graceful-остановка без выхода из процесса — общая часть цепочки before-quit и установки
  * обновления (инсталлятор должен стартовать строго после неё).
@@ -164,6 +167,8 @@ let stopping   = null;
 function stopApp() {
     if (stopping) return stopping;
     quitting = true;
+    // Nobody handles a toast click once the process is gone, so do not leave dead toasts behind.
+    if (notificationDelivery !== null) notificationDelivery.closeAll();
     updater.stop();
     wsClient.disconnect();
     storageWatcher.getWatcher().stop();
@@ -312,7 +317,7 @@ if (!gotLock) {
             tray.create(mainWindow, onQuit, () => updater.checkManually());
             updater.start();
 
-            const notificationDelivery = notifications.createNotificationDelivery({
+            notificationDelivery = notifications.createNotificationDelivery({
                 getWindow: () => mainWindow,
                 Notification,
                 isSystemNotificationsEnabled: getSystemNotifications,
