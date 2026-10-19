@@ -32,6 +32,9 @@ const UNREAD_COUNT_CHANNEL = 'app-notification-unread-count';
 /** Upper bound of remembered (id, occurrences) pairs; the oldest pair is evicted first. */
 const MAX_SHOWN_PAIRS = 500;
 
+/** Upper bound of toasts kept alive by id; the oldest toast is released first. */
+const MAX_LIVE_TOASTS = 50;
+
 /**
  * Remembers recently shown (id, occurrences) pairs. A replayed event (WS reconnect lookback) has
  * the same pair, while a coalesced record keeps its id and grows occurrences, so it counts as new.
@@ -83,14 +86,32 @@ function applyAppUserModelId(app, platform, appId) {
  * @param {typeof import('electron').Notification} deps.Notification
  * @param {() => boolean} deps.isSystemNotificationsEnabled
  * @param {(url: string|null) => void} deps.onToastClick shows the window and opens the url
- * @returns {{ handle: (data: Record<string, any>) => void }}
+ * @returns {{ handle: (data: Record<string, any>) => void, closeAll: () => void }}
  */
 function createNotificationDelivery({ getWindow, Notification, isSystemNotificationsEnabled, onToastClick }) {
     const tracker = createShownTracker();
-    // Strong references: a toast garbage-collected before the click would lose its handler.
-    const liveToasts = new Set();
+    // Strong references by notification id: a toast garbage-collected before the click would lose
+    // its handler. 'close' also fires when a toast moves to the Notification Center, where it can
+    // still be clicked, so only click, failed and eviction release a toast. Map order is age.
+    const liveToasts = new Map();
+
+    const release = (id, toast) => {
+        if (liveToasts.get(id) === toast) liveToasts.delete(id);
+    };
 
     return {
+        closeAll() {
+            const toasts = [...liveToasts.values()];
+            liveToasts.clear();
+            for (const toast of toasts) {
+                try {
+                    toast.close();
+                } catch (err) {
+                    console.error('[notifications] failed to close toast:', err);
+                }
+            }
+        },
+
         handle(data) {
             const win = getWindow();
             const alive = win !== null && win !== undefined && !win.isDestroyed();
@@ -115,13 +136,28 @@ function createNotificationDelivery({ getWindow, Notification, isSystemNotificat
 
             if (!isSystemNotificationsEnabled() || !Notification.isSupported()) return;
 
+            const previous = liveToasts.get(data.id);
+            if (previous !== undefined) {
+                // A coalesced record replaces its own toast; re-adding moves it to the newest slot.
+                liveToasts.delete(data.id);
+                try {
+                    previous.close();
+                } catch (err) {
+                    console.error('[notifications] failed to close replaced toast:', err);
+                }
+            }
+
             const toast = new Notification({ title: data.title, body: data.body });
-            liveToasts.add(toast);
+            liveToasts.set(data.id, toast);
+            if (liveToasts.size > MAX_LIVE_TOASTS) liveToasts.delete(liveToasts.keys().next().value);
             toast.on('click', () => {
-                liveToasts.delete(toast);
+                release(data.id, toast);
                 onToastClick(data.url ?? null);
             });
-            toast.on('close', () => liveToasts.delete(toast));
+            toast.on('failed', (_event, err) => {
+                release(data.id, toast);
+                console.error('[notifications] toast failed:', err);
+            });
             toast.show();
         },
     };

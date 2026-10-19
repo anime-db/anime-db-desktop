@@ -32,6 +32,10 @@ jest.mock('electron', () => ({
         getPath:    jest.fn(() => '/fake/userData'),
         getLocale:  jest.fn(() => 'ru-RU'),
     },
+    Notification: Object.assign(
+        jest.fn(function () { this.on = jest.fn(); this.show = jest.fn(); this.close = jest.fn(); }),
+        { isSupported: jest.fn(() => true) },
+    ),
     dialog:  { showErrorBox: jest.fn(), showMessageBoxSync: jest.fn() },
     session: { defaultSession: {} },
     nativeTheme: { themeSource: 'system', shouldUseDarkColors: false, on: jest.fn() },
@@ -797,6 +801,37 @@ describe('notification.created routing', () => {
         expect(fakeWindow.webContents.send).toHaveBeenCalledWith('app-notification', {
             type: 'notification', title: 'T', message: 'B',
         });
+    });
+});
+
+describe('toasts on exit', () => {
+    test('stopApp() closes the live toasts', async () => {
+        const { fakeWindow, wsClientHandlers } = loadLifecycle();
+        const { Notification } = require('electron');
+        await new Promise((r) => setTimeout(r, 500));
+        const updater = require('../../native/updater');
+        const stopApp = updater.init.mock.calls[0][0];
+        fakeWindow.isFocused.mockReturnValue(false);
+        wsClientHandlers['backend-event']({
+            event: 'notification.created',
+            data:  { id: 7, occurrences: 1, title: 'T', body: 'B', url: null },
+        });
+        const toast = Notification.mock.instances[0];
+        expect(toast.close).not.toHaveBeenCalled();
+
+        await stopApp();
+
+        expect(toast.close).toHaveBeenCalledTimes(1);
+    });
+
+    test('before-quit before delivery exists still exits', async () => {
+        const { app, appHandlers, supervisor } = loadLifecycle();
+        supervisor.start.mockReturnValue(new Promise(() => {}));
+
+        appHandlers['before-quit']({ preventDefault: jest.fn() });
+        await new Promise((r) => setTimeout(r, 0));
+
+        expect(app.exit).toHaveBeenCalledWith(0);
     });
 });
 
