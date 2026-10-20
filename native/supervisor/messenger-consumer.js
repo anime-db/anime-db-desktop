@@ -95,6 +95,11 @@ function runSetupTransports(context) {
  * `scheduler_sync_pull` (issue #870) добавлен последним: тик App\Scheduler\SyncPullSchedule лишь
  * кладёт App\Message\SyncPullMessage в транспорт `sync`, сам pull выполняет plugins-consumer.
  *
+ * `scheduler_storage_scan` (issue #1117) стоит самым последним: тик App\Scheduler\StorageScanSchedule
+ * кладёт обычный App\Message\ScanStorageMessage в `async` и срабатывает, только когда `async` пуст,
+ * поэтому поставленный ранее скан к следующему тику уже держит job-lock и пишет в журнал. Скан нельзя
+ * переносить на другой потребитель — на этом держится отсутствие дублей.
+ *
  * `saturation` (issue #1049, насыщение записи по ссылкам источников — интерактивные триггеры) стоит
  * первым: прогон нужен пользователю сразу, и его не должны задерживать ни push, ни индекс. Массовая
  * очередь `saturation_bulk` потребляется plugins-consumer.js, последней.
@@ -108,7 +113,7 @@ function runSetupTransports(context) {
 function spawnProcess(context, backoffIdx = 0) {
     if (stopping) return;
 
-    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'saturation', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull', 'source_urls'], {
+    child = spawn(BINARY, ['php-cli', CONSOLE, 'messenger:consume', 'saturation', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull', 'source_urls', 'scheduler_storage_scan'], {
         cwd: paths.getAppRootDir(),
         env: buildEnv(context),
         stdio: ['ignore', 'pipe', 'pipe'],

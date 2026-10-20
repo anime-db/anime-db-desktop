@@ -231,4 +231,25 @@ final class StorageTest extends TestCase
 
         (new Storage('Disc', null, StorageType::Video))->requirePath();
     }
+
+    public function testRelocateToANewPathForgetsTheStoredFileModified(): void
+    {
+        $storage = new Storage('Main', '/anime', StorageType::Folder);
+        $storage->markScanned(new \DateTimeImmutable('@1000'));
+
+        $storage->relocate('/other');
+
+        $this->assertNull($storage->getFileModified());
+    }
+
+    public function testRelocateToTheSamePathKeepsTheStoredFileModified(): void
+    {
+        $storage = new Storage('Main', '/anime', StorageType::Folder);
+        $storage->markScanned(new \DateTimeImmutable('@1000'));
+
+        $storage->relocate('/anime');
+        $storage->relocate(' /anime ');
+
+        $this->assertSame(1000, $storage->getFileModified()?->getTimestamp());
+    }
 }

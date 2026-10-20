@@ -127,26 +127,33 @@ class Storage
      */
     public function relocate(?string $path): self
     {
-        if (!$this->type->isReadable()) {
-            $this->path = null;
+        $previous = $this->path;
+        $this->path = $this->resolvePath($path);
 
-            return $this;
+        // The stored mtime belongs to the old root: forget it so the background scan looks at the new one.
+        if ($this->path !== $previous) {
+            $this->fileModified = null;
+        }
+
+        return $this;
+    }
+
+    private function resolvePath(?string $path): ?string
+    {
+        if (!$this->type->isReadable()) {
+            return null;
         }
 
         $path = $path === null ? '' : trim($path);
         if ($path === '' && !$this->type->isPathRequired()) {
-            $this->path = null;
-
-            return $this;
+            return null;
         }
 
         if ($path === '' || preg_match(self::ABSOLUTE_PATH_PATTERN, $path) !== 1) {
             throw new InvalidPathException(\sprintf('path must be an absolute Windows path, got "%s"', $path));
         }
 
-        $this->path = $path;
-
-        return $this;
+        return $path;
     }
 
     public function getDateUpdate(): ?\DateTimeImmutable
