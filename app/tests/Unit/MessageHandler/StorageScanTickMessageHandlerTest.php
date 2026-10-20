@@ -83,10 +83,46 @@ final class StorageScanTickMessageHandlerTest extends TestCase
 
     public function testAStorageWithoutRunsIsDue(): void
     {
-        $this->tick([$this->storage(1)]);
+        $storage = $this->storage(1);
+        $this->mtimes[$storage->requirePath()] = 1000;
+
+        $this->tick([$storage]);
 
         $this->assertSame([1], $this->dispatchedIds());
-        $this->assertSame([], $this->inspected);
+        $this->assertSame([$storage->requirePath()], $this->inspected);
+    }
+
+    public function testAStorageWithoutRunsAndAnUnreachableRootIsMarkedNotQueued(): void
+    {
+        $this->assertUnreachableIsMarkedNotQueued(null, null, 1);
+    }
+
+    public function testAFailedRunOlderThanADayAndAnUnreachableRootIsMarkedNotQueued(): void
+    {
+        $this->assertUnreachableIsMarkedNotQueued(ScanRunStatus::Failed, 1000, 1);
+    }
+
+    public function testADoneRunOlderThanAWeekAndAnUnreachableRootIsMarkedNotQueued(): void
+    {
+        $this->assertUnreachableIsMarkedNotQueued(ScanRunStatus::Done, 1000, 7);
+    }
+
+    public function testADoneRunWithoutFileModifiedAndAnUnreachableRootIsMarkedNotQueued(): void
+    {
+        $this->assertUnreachableIsMarkedNotQueued(ScanRunStatus::Done, null, 0);
+    }
+
+    private function assertUnreachableIsMarkedNotQueued(?ScanRunStatus $status, ?int $fileModified, int $ageDays): void
+    {
+        if ($status !== null) {
+            $this->recordRun(1, $status, ageSeconds: $ageDays * self::DAY + 600);
+        }
+        $storage = $this->storage(1, fileModified: $fileModified);
+
+        $this->tick([$storage]);
+
+        $this->assertSame([], $this->dispatchedIds());
+        $this->assertTrue($this->cache->getItem('storage_scan_unreachable_1')->isHit());
     }
 
     #[DataProvider('notDoneStatuses')]
@@ -97,7 +133,9 @@ final class StorageScanTickMessageHandlerTest extends TestCase
         $this->assertSame([], $this->dispatchedIds());
 
         $this->recordRun(2, $status, ageSeconds: self::DAY + 600);
-        $this->tick([$this->storage(2, fileModified: 1)]);
+        $due = $this->storage(2, fileModified: 1);
+        $this->mtimes[$due->requirePath()] = 1;
+        $this->tick([$due]);
         $this->assertSame([2], $this->dispatchedIds());
     }
 
@@ -123,8 +161,10 @@ final class StorageScanTickMessageHandlerTest extends TestCase
     public function testADoneRunWithoutFileModifiedIsDue(): void
     {
         $this->recordRun(1, ScanRunStatus::Done, ageSeconds: 3600);
+        $storage = $this->storage(1);
+        $this->mtimes[$storage->requirePath()] = 1000;
 
-        $this->tick([$this->storage(1)]);
+        $this->tick([$storage]);
 
         $this->assertSame([1], $this->dispatchedIds());
     }
@@ -133,7 +173,10 @@ final class StorageScanTickMessageHandlerTest extends TestCase
     {
         $this->recordRun(1, ScanRunStatus::Done, ageSeconds: 7 * self::DAY + 600);
 
-        $this->tick([$this->storage(1, fileModified: 1000)]);
+        $storage = $this->storage(1, fileModified: 1000);
+        $this->mtimes[$storage->requirePath()] = 1000;
+
+        $this->tick([$storage]);
 
         $this->assertSame([1], $this->dispatchedIds());
     }
@@ -162,7 +205,7 @@ final class StorageScanTickMessageHandlerTest extends TestCase
         $item = $this->cache->getItem('storage_scan_unreachable_1');
         $this->assertTrue($item->isHit());
         $this->assertSame(6 * 3600, $this->expiresIn($item));
-        $this->assertFalse($this->cache->getItem('storage_connected_scan_1')->isHit());
+        $this->assertFalse($this->cache->getItem('storage_scan_unreachable_2')->isHit());
 
         $this->inspected = [];
         $this->tick([$storage]);
@@ -174,7 +217,9 @@ final class StorageScanTickMessageHandlerTest extends TestCase
     {
         $this->assertTrue($this->jobLock->acquire(ScanStorageMessage::jobKey(1)));
 
-        $this->tick([$this->storage(1), $this->storage(2)]);
+        $b = $this->storage(2);
+        $this->mtimes[$b->requirePath()] = 1000;
+        $this->tick([$this->storage(1), $b]);
 
         $this->assertSame([2], $this->dispatchedIds());
     }
@@ -185,13 +230,17 @@ final class StorageScanTickMessageHandlerTest extends TestCase
         $this->recordRun(2, ScanRunStatus::Done, ageSeconds: 7200);
         $a = $this->storage(1);
         $b = $this->storage(2);
+        $c = $this->storage(3);
+        foreach ([$a, $b, $c] as $storage) {
+            $this->mtimes[$storage->requirePath()] = 1000;
+        }
 
         $this->tick([$a, $b]);
         $this->assertSame([2], $this->dispatchedIds());
 
         // A storage without runs goes before both.
         $this->dispatched = [];
-        $this->tick([$a, $b, $this->storage(3)]);
+        $this->tick([$a, $b, $c]);
         $this->assertSame([3], $this->dispatchedIds());
     }
 

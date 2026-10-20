@@ -51,7 +51,8 @@ use Symfony\Component\Messenger\MessageBusInterface;
  * (storages without runs first); only then the filesystem is read, one storage at a time and up
  * to the first due one — `is_readable()` on a dead network share can hang this very process.
  *
- * A storage is due when:
+ * A storage whose root is not readable is never queued: it gets the unreachable marker instead
+ * ({@see self::UNREACHABLE_TTL_SECONDS}), whatever the run history says. Otherwise it is due when:
  * - it has no runs;
  * - its latest run is not Done and is older than {@see self::FAILED_RETRY_SECONDS};
  * - its latest run is Done and the root mtime is newer than {@see Storage::getFileModified()}, or
@@ -116,21 +117,14 @@ final class StorageScanTickMessageHandler
 
     private function isDue(Storage $storage, int $id, ?ScanRun $run): bool
     {
-        if ($run === null) {
-            return true;
+        $age = $run === null ? null : time() - $run->startedAt->getTimestamp();
+
+        if ($run !== null && $run->status !== ScanRunStatus::Done && $age <= self::FAILED_RETRY_SECONDS) {
+            return false;
         }
 
-        $age = time() - $run->startedAt->getTimestamp();
-
-        if ($run->status !== ScanRunStatus::Done) {
-            return $age > self::FAILED_RETRY_SECONDS;
-        }
-
-        $fileModified = $storage->getFileModified();
-        if ($fileModified === null || $age > self::MAX_DONE_AGE_SECONDS) {
-            return true;
-        }
-
+        // Every branch that would queue a scan checks the root first: a scan of a dead path only fails
+        // and notifies the user, and is_readable() is safer here than inside the async consumer.
         $mtime = $this->rootInspector->modifiedAt($storage->requirePath());
         if ($mtime === null) {
             $item = $this->cache->getItem(self::unreachableKey($id));
@@ -138,6 +132,15 @@ final class StorageScanTickMessageHandler
             $this->cache->save($item);
 
             return false;
+        }
+
+        if ($run === null || $run->status !== ScanRunStatus::Done) {
+            return true;
+        }
+
+        $fileModified = $storage->getFileModified();
+        if ($fileModified === null || $age > self::MAX_DONE_AGE_SECONDS) {
+            return true;
         }
 
         return $mtime > $fileModified->getTimestamp();
