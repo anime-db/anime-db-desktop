@@ -80,6 +80,7 @@ final class ScanStorageService
         private readonly SyncTombstoneRepository $tombstoneRepository,
         private readonly LoggerInterface $logger,
         private readonly ?SaturationQueue $saturationQueue = null,
+        private readonly StorageRootInspector $rootInspector = new StorageRootInspector(),
     ) {
     }
 
@@ -144,6 +145,10 @@ final class ScanStorageService
             $remainingLinked[(string) $anime->getStoragePath()] = $anime;
         }
 
+        // Taken before the top-level listing (issue #1117): a folder that lands in the root while the
+        // scan runs is then newer than the stored value and the background scan picks it up next time.
+        $rootModified = $this->rootInspector->modifiedAt($path);
+
         $items = [];
 
         $entries = iterator_to_array($this->findTopLevelEntries($path), preserve_keys: false);
@@ -174,8 +179,7 @@ final class ScanStorageService
             $items[] = ScanResultItem::filesMissing($anime, $storagePath);
         }
 
-        $fileModified = filemtime($path);
-        $storage->markScanned(new \DateTimeImmutable('@'.($fileModified !== false ? $fileModified : time())));
+        $storage->markScanned(new \DateTimeImmutable('@'.($rootModified ?? time())));
 
         // A per-item failure (see matchNewEntry()'s own try/catch, issue #832) that happened to
         // hit a genuine concurrent external-id-claim race can leave this EntityManager closed

@@ -52,6 +52,13 @@ framework:
             # The tick only queues App\Message\SyncPullMessage onto `sync`; the pull runs there.
             scheduler_sync_pull: 'schedule://sync_pull'
 
+            # Symfony Scheduler transport (issue #1117), same pattern as scheduler_sync_pull:
+            # consuming it turns App\Scheduler\StorageScanSchedule's hourly recurring trigger into a
+            # dispatched App\Message\StorageScanTickMessage on every tick, resolved against the
+            # ScheduleProviderInterface service tagged #[AsSchedule('storage_scan')], not a queue.
+            # The tick only queues a regular App\Message\ScanStorageMessage onto `async`.
+            scheduler_storage_scan: 'schedule://storage_scan'
+
             # Background tasks scheduled by plugins via
             # AnimeDb\PluginContracts\Background\BackgroundTaskQueueInterface (issue #701, part 1
             # of 3 for #684). Same connection/table as `async`/`media` (queue_name is the only

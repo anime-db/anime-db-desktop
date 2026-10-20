@@ -243,15 +243,15 @@ describe('start', () => {
     // last for the same reason: a schedule tick must not jump ahead of either user-facing queue.
     // `scheduler_sync_pull` (issue #870) is appended after them, the earlier order is unchanged.
     // `source_urls` (issue #1058, recompute of source link comparison forms) is the lowest-priority
-    // background work and comes last.
-    test('consumes async, media, the scheduler transports, then source_urls last, in that order', async () => {
+    // background work; `scheduler_storage_scan` (issue #1117) is appended after it and comes last.
+    test('consumes async, media, the scheduler transports, source_urls, then scheduler_storage_scan last, in that order', async () => {
         mockPhpCommandRun.mockResolvedValueOnce(undefined);
         spawn.mockReturnValueOnce(createFakeChild());
 
         await start(7700, 'test-key');
 
         const args = spawn.mock.calls[0][1];
-        expect(args.slice(-8)).toEqual(['messenger:consume', 'saturation', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull', 'source_urls']);
+        expect(args.slice(-9)).toEqual(['messenger:consume', 'saturation', 'async', 'media', 'scheduler_downloads_poll', 'scheduler_market_refresh', 'scheduler_sync_pull', 'source_urls', 'scheduler_storage_scan']);
     });
 
     test('does not spawn messenger:consume when messenger:setup-transports rejects', async () => {

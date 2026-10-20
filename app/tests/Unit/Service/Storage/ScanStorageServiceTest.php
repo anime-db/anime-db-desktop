@@ -60,6 +60,7 @@ use App\Service\Storage\Scan\ScanResultItem;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\SearchByPluginChain;
 use App\Service\Storage\StorageMarkerService;
+use App\Service\Storage\StorageRootInspector;
 use App\Tests\Support\BuildsAnimeDeleteService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -149,7 +150,7 @@ final class ScanStorageServiceTest extends TestCase
         touch($path, $mtime ?? time());
     }
 
-    private function newService(?SearchByPluginChain $pluginChain = null, ?BulkFillerService $bulkFillerService = null, ?LoggerInterface $logger = null, ?\App\Service\Plugin\Filler\SaturationQueue $saturationQueue = null): ScanStorageService
+    private function newService(?SearchByPluginChain $pluginChain = null, ?BulkFillerService $bulkFillerService = null, ?LoggerInterface $logger = null, ?\App\Service\Plugin\Filler\SaturationQueue $saturationQueue = null, ?StorageRootInspector $rootInspector = null): ScanStorageService
     {
         return new ScanStorageService(
             new StorageMarkerService($this->entityManager),
@@ -162,6 +163,7 @@ final class ScanStorageServiceTest extends TestCase
             new SyncTombstoneRepository($this->entityManager),
             $logger ?? new NullLogger(),
             $saturationQueue,
+            $rootInspector ?? new StorageRootInspector(),
         );
     }
 
@@ -529,6 +531,32 @@ final class ScanStorageServiceTest extends TestCase
         $result = $service->scan($storage);
 
         $this->assertSame(ScanItemType::AutoLinked, $result->items[0]->type);
+    }
+
+    public function testTheRootMtimeIsTakenBeforeTheTopLevelListingSoALateFolderStaysNewerThanFileModified(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/Trigun.mkv');
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        // The plugin search runs after the listing: a folder appearing there is not part of this run.
+        $plugin = $this->createStub(SearchByPluginInterface::class);
+        $plugin->method('find')->willReturnCallback(static function () use ($dir): array {
+            mkdir($dir.'/Late');
+            touch($dir, time() + 100);
+
+            return [];
+        });
+        $chain = new SearchByPluginChain(['test-plugin' => $plugin], new PluginsConfigStore(''), new \App\Service\Plugin\DefaultSearchPluginRegistry(['test-plugin' => $plugin], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class)));
+
+        $result = $this->newService($chain)->scan($storage);
+
+        $this->assertSame(['Trigun.mkv'], array_map(static fn (ScanResultItem $i): string => $i->storagePath, $result->items));
+        clearstatcache(true, $dir);
+        $this->assertNotNull($storage->getFileModified());
+        $this->assertGreaterThan($storage->getFileModified()->getTimestamp(), (new StorageRootInspector())->modifiedAt($dir), 'the background scan must see the root as changed');
     }
 
     public function testNewFileWithExactlyOnePluginCandidateCreatesANewAnime(): void
