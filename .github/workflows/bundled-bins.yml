@@ -1,0 +1,69 @@
+name: Bundled bins
+
+# Проверка поставки трёх сторонних бинарей — meilisearch, qbittorrent-nox, ffprobe (issue #1120).
+# До этой джобы ни один из них не запускался на Windows раньше релизного тега: первым был
+# release-smoke в build.yml, а он идёт только по тегу. Бамп в scripts/versions.json, принёсший
+# бандл без DLL (Qt6, MSVC CRT) или бинарь не той версии, проходил PR зелёным — тот же класс
+# слепого угла, что в #535.
+#
+# scripts/check-bundled-bins.js (#1119) делает две вещи. Сверяет состав распакованных каталогов
+# bin/<name>/ со слепком scripts/bundled-bins-runtime.json — пофайловые SHA-256, снятые с архивов
+# (распаковка на чистом JS, поэтому слепок пишется на любой ОС). И запускает каждый бинарь с
+# флагом версии: первая строка вывода обязана быть непустой и содержать upstream-версию из
+# versions.json. Это проверка правилом, а не сверка с сохранённым выводом, — так пин сверяется с
+# бинарём на каждом бампе без ручного снятия на Windows.
+#
+# Граница: `--version` ловит только DLL, которые грузятся при старте процесса. Qt-плагины
+# (plugins/tls, plugins/sqldrivers) подгружаются лениво — их пропажу видит только сверка состава.
+# Гейтом «приложение работает» остаётся release-smoke.
+#
+# Отдельный workflow, а не шаг в runtime-parity.yml: у той джобы свои триггеры, и её
+# FrankenPHP-проверкам эти ~230 МБ бинарей не нужны.
+on:
+  pull_request:
+    paths:
+      - 'scripts/versions.json'
+      - 'scripts/download-bins.js'
+      - 'scripts/bundled-bins-runtime.json'
+      - 'scripts/check-bundled-bins.js'
+      # check-bundled-bins.js берёт fingerprintDirectory/diffMap отсюда, а этот модуль при
+      # загрузке подключает php-cli-command.js: правка любого из двух меняет исход сверки.
+      - 'scripts/check-runtime-parity.js'
+      - 'native/supervisor/php-cli-command.js'
+      - '.github/workflows/bundled-bins.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Bundled bins (Windows)
+    runs-on: windows-latest
+    # Скачивание трёх бинарей и три запуска `--version` укладываются в минуты; это граница
+    # «что-то зависло», а не бюджет. Каждый запуск сам ограничен 30 с внутри скрипта.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      # shell: bash обязателен: оболочка по умолчанию на windows-latest — pwsh, и он разобрал бы
+      # список через запятую без кавычек как массив, отдав скрипту три отдельных аргумента.
+      - name: Download meilisearch, qbittorrent-nox and ffprobe
+        shell: bash
+        run: node scripts/download-bins.js --only meilisearch,qbittorrent-nox,ffprobe
+
+      # Без --no-launch: на этой джобе бинари обязаны запуститься. Слепок здесь не
+      # перезаписывается — его обновляют `--write` руками в том же PR, где меняется пин.
+      - name: Compare composition against the snapshot and launch every binary
+        shell: bash
+        run: node scripts/check-bundled-bins.js
