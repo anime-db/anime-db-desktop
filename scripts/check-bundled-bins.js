@@ -93,7 +93,8 @@ function removeProfileDir(profileDir) {
 
 /**
  * Launches the bin with a version flag and applies the rule: exit code 0, first output line
- * non-empty and containing the upstream version. Returns an error line, or null when it passes.
+ * non-empty and containing the upstream version. Returns `{ error, firstLine }`: `error` is an
+ * error line or null when the rule passes, `firstLine` is what the bin printed (for the log).
  */
 function checkLaunch(bin, version, binDir, exec) {
     const exePath = path.join(binDir, bin.name, bin.exe);
@@ -106,23 +107,23 @@ function checkLaunch(bin, version, binDir, exec) {
         output = exec(exePath, launchArgs(bin, profileDir), { timeoutMs: LAUNCH_TIMEOUT_MS });
     } catch (err) {
         if (err.code === 'ETIMEDOUT') {
-            return `${bin.name}: бинарь не завершился за ${LAUNCH_TIMEOUT_MS / 1000} с`;
+            return { error: `${bin.name}: бинарь не завершился за ${LAUNCH_TIMEOUT_MS / 1000} с`, firstLine: null };
         }
-        return `${bin.name}: запуск не удался: ${err.message}`;
+        return { error: `${bin.name}: запуск не удался: ${err.message}`, firstLine: null };
     } finally {
         if (profileDir !== null) removeProfileDir(profileDir);
     }
 
     const firstLine = String(output ?? '').split(/\r?\n/)[0].trim();
     if (firstLine === '') {
-        return `${bin.name}: первая строка вывода пустая`;
+        return { error: `${bin.name}: первая строка вывода пустая`, firstLine };
     }
     const expected = upstreamVersion(version);
     if (!firstLine.includes(expected)) {
-        return `${bin.name}: первая строка вывода ${JSON.stringify(firstLine)} не содержит версию ${expected}`;
+        return { error: `${bin.name}: первая строка вывода ${JSON.stringify(firstLine)} не содержит версию ${expected}`, firstLine };
     }
 
-    return null;
+    return { error: null, firstLine };
 }
 
 const KNOWN_FLAGS = ['--write', '--no-launch', '--bin-dir', '--snapshot', '--versions'];
@@ -237,11 +238,15 @@ function run({
         return fail('Поставка разошлась со слепком:', diff);
     }
 
+    // What every bin printed goes to the log on success too: a green run should show which
+    // versions actually started, not only that the rule held.
+    const launched = [];
     if (!noLaunch) {
         const launchDiff = [];
         for (const bin of BINS) {
-            const error = checkLaunch(bin, versions[bin.versionKey], binDir, exec);
+            const { error, firstLine } = checkLaunch(bin, versions[bin.versionKey], binDir, exec);
             if (error !== null) launchDiff.push(error);
+            else launched.push(`${bin.name}: ${firstLine}`);
         }
         if (launchDiff.length > 0) {
             return fail('Проверка запуска не пройдена:', launchDiff);
@@ -253,6 +258,7 @@ function run({
         exitCode: 0,
         message: noLaunch ? 'Состав поставки соответствует слепку.' : 'Состав поставки соответствует слепку, бинари запускаются.',
         diff: [],
+        launched,
     };
 }
 
@@ -270,6 +276,9 @@ function main() {
     const result = run(options);
 
     (result.ok ? console.log : console.error)(result.message);
+    for (const line of result.launched ?? []) {
+        console.log(`  ${line}`);
+    }
     for (const line of result.diff) {
         console.error(`  ${line}`);
     }

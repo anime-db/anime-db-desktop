@@ -81,6 +81,14 @@ describe('check-bundled-bins', () => {
         const result = run(opts());
 
         expect(result).toMatchObject({ ok: true, exitCode: 0, diff: [] });
+        expect(result.launched).toHaveLength(3);
+        NAMES.forEach((name, i) => expect(result.launched[i]).toMatch(new RegExp(`^${name}: \\S`)));
+    });
+
+    test('--no-launch reports no launched lines', () => {
+        writeSnapshot();
+
+        expect(run(opts({ noLaunch: true })).launched).toEqual([]);
     });
 
     test('--write records exactly version and directoryFingerprint per section, skipping dotfiles', () => {
