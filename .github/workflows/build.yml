@@ -23,18 +23,18 @@ jobs:
     # Успешная сборка укладывается в 3–4 минуты, так что 30 — примерно восьмикратный
     # запас с учётом промахов кеша и медленного раннера.
     timeout-minutes: 30
-    # Шаг «Create GitHub Release» создаёт/обновляет релиз и грузит в него инсталлятор.
-    # Умолчание GITHUB_TOKEN в этом репозитории — только чтение, без явного
-    # contents: write шаг падает с «Resource not accessible by integration».
+    # Сборка ничего не публикует: релиз и зеркало — в job publish (issue #1132). Здесь
+    # исполняется всё дерево npm/composer-зависимостей и само собранное приложение, поэтому
+    # токен только на чтение, а секретов подписи и зеркала в этом job нет.
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v5
         with:
-          # Токен с contents: write нужен только шагу релиза. Не оставляем его в
-          # .git/config, где его прочитал бы любой код из npm ci / composer install
-          # и само собранное приложение на release gate; git с токеном джобе не нужен.
+          # Не оставляем токен в .git/config, где его прочитал бы любой код из npm ci /
+          # composer install и само собранное приложение на release gate; git с токеном
+          # джобе не нужен.
           persist-credentials: false
 
       - name: Setup Node.js
@@ -108,26 +108,96 @@ jobs:
       - name: Check the packaged app for the auto-updater
         run: node scripts/check-packaged-app.js
 
+      # Гейт подписи обновлений под рантаймом приложения (issue #1132). node:crypto в Electron
+      # собран на BoringSSL, а не на OpenSSL Node раннера, поэтому поддержку Ed25519 проверяем
+      # там, где клиент будет её использовать: модуль native/updater/signature.js из
+      # dist/win-unpacked и update-keys.json рядом с ним должны принять тестовый вектор
+      # резервного ключа вторым ключом и отвергнуть первым. scripts/ в пакет не входит, поэтому
+      # скрипт запускается из репозитория. Подробности — докблок scripts/check-update-verifier.js.
+      - name: Check the update signature verifier under Electron
+        shell: bash
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+        run: dist/win-unpacked/AnimeDB.exe scripts/check-update-verifier.js
+
+      # Всё, что нужно job publish: инсталлятор, blockmap для дифференциальной загрузки и
+      # latest.yml, который publish подпишет.
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
           name: AnimeDB-installer
-          path: dist/*.exe
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.exe.blockmap
+            dist/latest.yml
 
-      # Релиз — канал автообновления: установленные копии читают latest.yml последнего
-      # релиза и качают из него инсталлятор (blockmap — для дифференциальной загрузки).
+  # Публикация релиза: подпись latest.yml, GitHub-релиз и зеркало mr01 (issue #1132).
+  #
+  # Отдельный job на ubuntu без npm ci / composer install: секрет подписи UPDATE_SIGNING_KEY и
+  # креды зеркала MIRROR_CREDS не живут рядом со всем деревом npm-зависимостей и сборочными
+  # скриптами. Скрипты публикации написаны без node_modules (Node 22 + curl).
+  #
+  # Только по тегу v*: ручной запуск с ветки собирает инсталлятор, но не публикует и не получает
+  # секретов. Секреты — в Environment release, чья deployment policy пускает только теги v*, а
+  # создавать теги v* может только admin (ruleset release-tags).
+  #
+  # Правило: опубликованный тег НЕ перевешивается. Перевес перезаписывает ассеты той же версии
+  # у уже опубликованного релиза — копии, успевшие обновиться, исправление не получат, а у
+  # качающих в этот момент не сойдётся sha512. Исправление — новым patch-тегом. Полный
+  # перезапуск пересобирает инсталлятор с другим sha512 — его останавливает гард перевыпуска;
+  # перезапуск упавшего publish с тем же артефактом проходит (подпись Ed25519 детерминирована).
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    # Умолчание GITHUB_TOKEN в этом репозитории — только чтение; без contents: write шаг
+    # релиза падает с «Resource not accessible by integration».
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      # Node 22 — версия, под которую написаны и протестированы скрипты публикации (ci.yml);
+      # на раннере предустановлен другой. Без cache: npm — зависимости здесь не ставятся.
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Download artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: AnimeDB-installer
+          path: dist
+
+      # Проверка — по закоммиченному native/updater/update-keys.json, тем же ключам, что зашиты
+      # в клиент, а не по ключу из секрета: неверный pubkey в клиенте роняет релиз здесь, а не
+      # молча ломает канал обновлений у установленных копий.
+      - name: Sign latest.yml
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          node scripts/sign-update.js dist/latest.yml
+          node scripts/verify-update-signature.js dist/latest.yml
+
+      - name: Refuse to republish a tag with different bytes
+        run: node scripts/check-release-republish.js "$GITHUB_REF_NAME" dist/latest.yml
+
+      # Релиз — основной канал автообновления: клиенты берут latest.yml и latest.yml.sig
+      # последнего релиза, проверяют подпись и качают инсталлятор из релиза его тега.
       #
       # fail_on_unmatched_files: по умолчанию softprops на ненайденный glob пишет warning и всё
-      # равно публикует релиз — без latest.yml такой релиз установленные копии не увидят.
+      # равно публикует релиз — без latest.yml и подписи такой релиз клиенты не примут.
       #
-      # prerelease: false задан явно: GitHub-провайдер electron-updater pre-release пропускает,
-      # а флаг у существующего релиза softprops сохраняет как есть.
-      #
-      # Правило: опубликованный тег НЕ перевешивается. Перевес перезаписывает ассеты той же
-      # версии у уже опубликованного релиза — копии, успевшие обновиться, исправление не
-      # получат, а у качающих в этот момент не сойдётся sha512. Исправление — новым patch-тегом.
+      # prerelease: false задан явно: клиенты читают releases/latest, а pre-release туда не
+      # попадает; флаг у существующего релиза softprops сохраняет как есть.
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           prerelease: false
@@ -136,3 +206,14 @@ jobs:
             dist/*.exe
             dist/*.exe.blockmap
             dist/latest.yml
+            dist/latest.yml.sig
+
+      # Зеркало — второй источник на случай недоступного GitHub. Сбой заливки или сверки после
+      # ретраев скрипт сам превращает в ::warning и выходит с 0: GitHub остаётся авторитетным, а
+      # отставшее зеркало клиенту не вредит (он берёт наибольшую версию из прошедших проверку
+      # подписи). Поэтому без continue-on-error: ненулевой код — только ошибка входа (нет файлов,
+      # невалидный MIRROR_CREDS), и она должна быть видна. Сертификат FTPS проверяется всегда.
+      - name: Publish to the mirror
+        env:
+          MIRROR_CREDS: ${{ secrets.MIRROR_CREDS }}
+        run: node scripts/publish-update-mirror.js dist
