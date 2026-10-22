@@ -3,6 +3,9 @@ framework:
     secret: '%env(APP_SECRET)%'
     default_locale: en
 
+    # The backend is reachable on loopback only; rejecting other Host values blocks DNS rebinding.
+    trusted_hosts: ['^127\.0\.0\.1$', '^localhost$']
+
     # Note that the session will be started ONLY if you read or write from it.
     session: true
 

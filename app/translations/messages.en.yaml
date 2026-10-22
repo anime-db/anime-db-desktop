@@ -865,6 +865,9 @@ onboarding:
     import_v1_done_no_report: The import finished.
     import_v1_open_catalog_button: Open the catalog
 
+explorer_open:
+    error_invalid_path: 'The folder could not be opened: it is not a valid absolute path.'
+
 storage_edit:
     title: Edit storage — AnimeDB
     heading: Edit storage

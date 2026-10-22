@@ -45,6 +45,7 @@ use App\Service\JobLock\JobLockService;
 use App\Service\Storage\ManualLinkResult;
 use App\Service\Storage\ManualLinkService;
 use App\Service\Storage\ManualLinkStatus;
+use App\Service\Storage\StorageLocator;
 use App\Service\Storage\StorageMarkerService;
 use App\Tests\Support\BuildsAnimeDeleteService;
 use Doctrine\DBAL\DriverManager;
@@ -125,9 +126,9 @@ final class ManualLinkServiceTest extends TestCase
     private function newService(): ManualLinkService
     {
         return new ManualLinkService(
-            new StorageRepository($this->entityManager),
             new AnimeRepository($this->entityManager),
             new DownloadRepository($this->entityManager),
+            new StorageLocator(new StorageRepository($this->entityManager), $this->markers, $this->entityManager),
             $this->markers,
             $this->jobLock,
             $this->entityManager,
