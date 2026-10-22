@@ -32,6 +32,7 @@ use App\Entity\Storage;
 use App\Repository\AnimeRepository;
 use App\Service\Storage\StorageLocationKind;
 use App\Service\Storage\StorageLocator;
+use Symfony\Component\HttpFoundation\Exception\SuspiciousOperationException;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -51,11 +52,17 @@ use Symfony\Contracts\Translation\TranslatorInterface;
  * preflight the backend never approves, and `<img>` or a plain link send none. The check is the
  * first thing the action does: reading a marker or testing a UNC path (`\\host\share`) makes the
  * machine talk to that host, so any filesystem access before the check would leak credentials.
+ *
+ * The header alone does not stop DNS rebinding: a page on a foreign domain re-pointed at 127.0.0.1
+ * is same-origin with the backend and may set any header. So the `Host` must be a loopback name too.
  */
 final class ExplorerOpenController
 {
     public const string SHELL_HEADER = 'X-AnimeDB-Shell';
     public const string SHELL_HEADER_VALUE = '1';
+
+    /** The backend listens on loopback only; any other Host means a foreign page reached it (DNS rebinding). */
+    private const array ALLOWED_HOSTS = ['127.0.0.1', 'localhost'];
 
     public function __construct(
         private readonly StorageLocator $locator,
@@ -68,7 +75,10 @@ final class ExplorerOpenController
     #[Route('/explorer/open', name: 'explorer_open', methods: ['GET'])]
     public function open(Request $request): Response
     {
-        if ($request->headers->get(self::SHELL_HEADER) !== self::SHELL_HEADER_VALUE) {
+        if (
+            $request->headers->get(self::SHELL_HEADER) !== self::SHELL_HEADER_VALUE
+            || !$this->isLoopbackHost($request)
+        ) {
             return new Response('', Response::HTTP_FORBIDDEN);
         }
 
@@ -107,6 +117,16 @@ final class ExplorerOpenController
         }
 
         return $this->redirectTo('anime_new', ['storage_id' => $storageId, 'storage_path' => $name, 'title' => $name]);
+    }
+
+    private function isLoopbackHost(Request $request): bool
+    {
+        try {
+            return \in_array(strtolower($request->getHost()), self::ALLOWED_HOSTS, true);
+        } catch (SuspiciousOperationException) {
+            // Trusted hosts are configured and the Host is not among them.
+            return false;
+        }
     }
 
     /** The entry bound to the top-level item, comparing names ignoring case and a trailing separator (v1 imports store "Foo\"). */

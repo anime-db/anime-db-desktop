@@ -71,6 +71,18 @@ final class ExplorerOpenControllerTest extends TestCase
         }
     }
 
+    public function testForeignHostWithRightHeaderNothingIsLookedUp(): void
+    {
+        $this->entityManager->expects(self::never())->method(self::anything());
+
+        foreach ([$this->dir, '\\\\host\\x'] as $path) {
+            $request = Request::create('http://evil.example:8000/explorer/open', 'GET', ['path' => $path]);
+            $request->headers->set(ExplorerOpenController::SHELL_HEADER, ExplorerOpenController::SHELL_HEADER_VALUE);
+
+            self::assertSame(403, $this->controller()->open($request)->getStatusCode());
+        }
+    }
+
     public function testWithWrongHeaderValueNothingIsLookedUp(): void
     {
         $this->entityManager->expects(self::never())->method(self::anything());

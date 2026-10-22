@@ -89,7 +89,10 @@ final class StorageEditController
     {
         // Issue #1121: a prefilled new root (e.g. where the storage marker was found); it is only
         // shown in the form, saving stays the user's own confirmation.
-        $path = trim((string) $request->query->get('path', ''));
+        // The preset downloads storage has a read-only path, so a prefill would be a dead end there.
+        $path = $storage->id !== null && $storage->id === $this->settings->getPresetDownloadsStorageId()
+            ? ''
+            : trim((string) $request->query->get('path', ''));
 
         return $this->renderForm($storage, path: $path !== '' ? $path : null);
     }
