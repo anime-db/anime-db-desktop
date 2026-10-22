@@ -53,4 +53,87 @@ describe('build/installer.nsh', () => {
       expect(code).not.toMatch(new RegExp(`\\$\\{?${name}\\b`, 'i'));
     }
   });
+
+  describe('Explorer context menu entry (issue #1122)', () => {
+    const CLASSES = ['Directory', 'Directory\\Background', 'Drive'];
+    const COMMAND = `'"$INSTDIR\\AnimeDB.exe" --explorer-open="%V"'`;
+    const macroBody = (code, name) => {
+      const m = code.match(new RegExp(`!macro ${name}\\b([\\s\\S]*?)!macroend`));
+      return m ? m[1] : null;
+    };
+
+    test('customInstall and customUnInstall are defined exactly once', () => {
+      const code = readCode();
+
+      expect(code.match(/^\s*!macro customInstall\b/gim)).toHaveLength(1);
+      expect(code.match(/^\s*!macro customUnInstall\b/gim)).toHaveLength(1);
+    });
+
+    test('customInstall is outside the plugins page condition, plugin writing stays inside', () => {
+      const code = readCode();
+      const before = code.slice(0, code.indexOf('!macro customInstall'));
+      const opened = (before.match(/^\s*!ifdef\s+ANIMEDB_PLUGINS_PAGE\b/gim) || []).length;
+      const closedByElse = (before.match(/^\s*!else\b/gim) || []).length;
+      const closed = (before.match(/^\s*!endif\b/gim) || []).length;
+
+      // the "!ifdef ANIMEDB_PLUGINS_PAGE" block is already closed at this point
+      expect(opened).toBe(1);
+      expect(closedByElse + closed).toBeGreaterThanOrEqual(opened + 1); // + the !ifndef BUILD_UNINSTALLER is still open
+      const pluginsBlock = code.slice(code.indexOf('!ifdef ANIMEDB_PLUGINS_PAGE'), code.indexOf('!else'));
+      expect(pluginsBlock).toContain('installer-plugins.json');
+      expect(macroBody(code, 'customInstall')).not.toContain('installer-plugins.json');
+    });
+
+    test('customInstall writes MUIVerb, Icon and command for all three classes', () => {
+      const body = macroBody(readCode(), 'customInstall');
+
+      for (const cls of CLASSES) {
+        const key = `"Software\\Classes\\${cls}\\shell\\AnimeDB`;
+        expect(body).toContain(`WriteRegStr SHCTX ${key}" "MUIVerb" "$(AnimedbExplorerVerb)"`);
+        expect(body).toContain(`WriteRegStr SHCTX ${key}" "Icon" "$INSTDIR\\resources\\app\\resources\\tray-idle.ico"`);
+        expect(body).toContain(`WriteRegStr SHCTX ${key}\\command" "" ${COMMAND}`);
+      }
+    });
+
+    test('customInstall clears HKCU unconditionally before writing SHCTX', () => {
+      const body = macroBody(readCode(), 'customInstall');
+      const firstWrite = body.indexOf('WriteRegStr SHCTX');
+
+      for (const cls of CLASSES) {
+        const del = body.indexOf(`DeleteRegKey HKCU "Software\\Classes\\${cls}\\shell\\AnimeDB"`);
+        expect(del).toBeGreaterThanOrEqual(0);
+        expect(del).toBeLessThan(firstWrite);
+      }
+      expect(body.slice(0, firstWrite)).not.toMatch(/\$\{(If|IfNot|Unless)\}/i);
+    });
+
+    test('the Icon path is documented to depend on asar:false, which the build config sets', () => {
+      const raw = fs.readFileSync(path.join(__dirname, '..', '..', 'build', 'installer.nsh'), 'utf8');
+      const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
+
+      expect(raw).toMatch(/;[^\n]*asar"?: false/);
+      expect(pkg.build.asar).toBe(false);
+      expect(fs.existsSync(path.join(__dirname, '..', '..', 'resources', 'tray-idle.ico'))).toBe(true);
+    });
+
+    test('MUIVerb LangString exists for en and ru outside the plugins page condition', () => {
+      const code = readCode();
+
+      expect(code).toMatch(/^\s*LangString AnimedbExplorerVerb 1033 "/m);
+      expect(code).toMatch(/^\s*LangString AnimedbExplorerVerb 1049 "/m);
+      expect(code.indexOf('LangString AnimedbExplorerVerb')).toBeGreaterThan(code.indexOf('!else'));
+    });
+
+    test('customUnInstall removes the keys under ifNot isUpdated', () => {
+      const body = macroBody(readCode(), 'customUnInstall');
+      const guard = body.indexOf('${ifNot} ${isUpdated}');
+
+      expect(guard).toBeGreaterThanOrEqual(0);
+      for (const cls of CLASSES) {
+        const del = body.indexOf(`DeleteRegKey SHCTX "Software\\Classes\\${cls}\\shell\\AnimeDB"`);
+        expect(del).toBeGreaterThan(guard);
+        expect(del).toBeLessThan(body.indexOf('${endif}'));
+      }
+    });
+  });
 });
