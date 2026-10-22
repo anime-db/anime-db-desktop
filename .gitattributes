@@ -1,1 +1,2 @@
 app/migrations/schema.golden.tsv text eol=lf
+tests/fixtures/update-keys/* -text

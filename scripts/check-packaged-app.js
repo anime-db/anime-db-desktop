@@ -46,6 +46,10 @@
  *    must be true and "version" must equal GITHUB_REF_NAME without the "v" prefix; otherwise it
  *    must be false. A flag lost on the way to packaging would ship a release whose updater is
  *    silently off, and the next release would never reach those copies.
+ *
+ * 4. Update keys. native/updater/update-keys.json in the packaged app must be a non-empty array of
+ *    base64 keys, each exactly 32 bytes after decoding: a broken file means no signed update is
+ *    ever accepted by this build.
  */
 
 const fs = require('fs');
@@ -193,14 +197,46 @@ function checkReleaseBuildFlag(appDir, refType = process.env.GITHUB_REF_TYPE, re
     return problems;
 }
 
+/**
+ * @returns {string[]} problems found; empty when update-keys.json holds only 32-byte keys
+ */
+function checkUpdateKeys(appDir) {
+    const file = path.join(appDir, 'native', 'updater', 'update-keys.json');
+    let keys;
+    try {
+        keys = readJson(file);
+    } catch (e) {
+        return [`update-keys.json cannot be read from the packaged app (${path.relative(appDir, file)}): ${e.message}`];
+    }
+    if (!Array.isArray(keys) || keys.length === 0) {
+        return ['update-keys.json in the packaged app is not a non-empty array: no signed update would be accepted'];
+    }
+    // The gate must accept exactly what the client accepts, so it reuses the client's own parser.
+    let parseKeys;
+    try {
+        ({ parseKeys } = require(path.join(appDir, 'native', 'updater', 'signature.js')));
+    } catch (e) {
+        return [`signature.js cannot be loaded from the packaged app: ${e.message}`];
+    }
+    const problems = [];
+    keys.forEach((key, index) => {
+        try {
+            parseKeys([key]);
+        } catch (e) {
+            problems.push(`update-keys.json key #${index} is not a base64 32-byte Ed25519 key (${e.message.replace(/^key #0/, 'key')})`);
+        }
+    });
+    return problems;
+}
+
 function main(distDir = path.join(rootDir, 'dist')) {
     const appDir = path.join(distDir, 'win-unpacked', 'resources', 'app');
-    const problems = [...checkDependencyClosure(appDir), ...checkUpdateMetadata(distDir), ...checkReleaseBuildFlag(appDir)];
+    const problems = [...checkDependencyClosure(appDir), ...checkUpdateMetadata(distDir), ...checkReleaseBuildFlag(appDir), ...checkUpdateKeys(appDir)];
     for (const problem of problems) {
         console.error(`::error::${problem}`);
     }
     if (problems.length === 0) {
-        console.log('Packaged app: dependency closure complete, latest.yml matches installer and blockmap, releaseBuild flag is correct.');
+        console.log('Packaged app: dependency closure complete, latest.yml matches installer and blockmap, releaseBuild flag is correct, update keys are valid.');
     }
     return problems.length === 0 ? 0 : 1;
 }
@@ -209,4 +245,4 @@ if (require.main === module) {
     process.exitCode = main(process.argv[2]);
 }
 
-module.exports = { checkDependencyClosure, checkUpdateMetadata, checkReleaseBuildFlag, resolvePackageDir };
+module.exports = { checkDependencyClosure, checkUpdateMetadata, checkReleaseBuildFlag, checkUpdateKeys, resolvePackageDir };
