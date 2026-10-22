@@ -37,6 +37,12 @@
 !macro customUnInstall
   ${ifNot} ${isUpdated}
     RMDir /r "$LOCALAPPDATA\anime-db-desktop-updater"
+
+    ; The Explorer context menu entries (see customInstall below). Skipped on an update: the new
+    ; version rewrites them right after, and the shell must not lose the entry in between.
+    DeleteRegKey SHCTX "Software\Classes\Directory\shell\AnimeDB"
+    DeleteRegKey SHCTX "Software\Classes\Directory\Background\shell\AnimeDB"
+    DeleteRegKey SHCTX "Software\Classes\Drive\shell\AnimeDB"
   ${endif}
 !macroend
 
@@ -122,7 +128,7 @@ FunctionEnd
 !macroend
 
 ; Written here rather than on the page, so that a cancelled installation leaves no trace.
-!macro customInstall
+!macro animedbWritePluginsSelection
   ${If} $AnimedbPluginsPageShown == "1"
     CreateDirectory "$APPDATA\AnimeDB"
     FileOpen $0 "$APPDATA\AnimeDB\installer-plugins.json" w
@@ -131,5 +137,45 @@ FunctionEnd
   ${EndIf}
 !macroend
 
+!else
+!macro animedbWritePluginsSelection
+!macroend
 !endif
+
+; Label of the Explorer context menu entry. Declared outside the plugins page condition: the entry
+; is registered on every install. English is first, so it is the runtime fallback.
+LangString AnimedbExplorerVerb 1033 "Open in AnimeDB"
+LangString AnimedbExplorerVerb 1049 "Открыть в AnimeDB"
+
+; One static "Open in AnimeDB" entry for a folder, a folder background and a drive root (issue
+; #1122). The click only opens a screen of the app; the app resolves what to show.
+;
+; The same keys are first removed from HKCU unconditionally: in the per-user mode SHCTX is HKCU and
+; they are rewritten right below, in the all-users mode this drops leftovers of an earlier per-user
+; install, which HKCR would otherwise prefer over HKLM and which would point at a deleted exe.
+;
+; "Icon" depends on "asar": false in package.json (build.asar): the tray icon is then a plain file
+; at resources\app\resources, not inside app.asar where the shell could not read it.
+;
+; The command passes the path glued to the switch as one argument. For a drive root "%V" is "D:\",
+; so the shell produces "D:\"" that CommandLineToArgvW reads as D:" - the app restores it.
+!macro customInstall
+  DeleteRegKey HKCU "Software\Classes\Directory\shell\AnimeDB"
+  DeleteRegKey HKCU "Software\Classes\Directory\Background\shell\AnimeDB"
+  DeleteRegKey HKCU "Software\Classes\Drive\shell\AnimeDB"
+
+  WriteRegStr SHCTX "Software\Classes\Directory\shell\AnimeDB" "MUIVerb" "$(AnimedbExplorerVerb)"
+  WriteRegStr SHCTX "Software\Classes\Directory\shell\AnimeDB" "Icon" "$INSTDIR\resources\app\resources\tray-idle.ico"
+  WriteRegStr SHCTX "Software\Classes\Directory\shell\AnimeDB\command" "" '"$INSTDIR\AnimeDB.exe" --explorer-open="%V"'
+
+  WriteRegStr SHCTX "Software\Classes\Directory\Background\shell\AnimeDB" "MUIVerb" "$(AnimedbExplorerVerb)"
+  WriteRegStr SHCTX "Software\Classes\Directory\Background\shell\AnimeDB" "Icon" "$INSTDIR\resources\app\resources\tray-idle.ico"
+  WriteRegStr SHCTX "Software\Classes\Directory\Background\shell\AnimeDB\command" "" '"$INSTDIR\AnimeDB.exe" --explorer-open="%V"'
+
+  WriteRegStr SHCTX "Software\Classes\Drive\shell\AnimeDB" "MUIVerb" "$(AnimedbExplorerVerb)"
+  WriteRegStr SHCTX "Software\Classes\Drive\shell\AnimeDB" "Icon" "$INSTDIR\resources\app\resources\tray-idle.ico"
+  WriteRegStr SHCTX "Software\Classes\Drive\shell\AnimeDB\command" "" '"$INSTDIR\AnimeDB.exe" --explorer-open="%V"'
+
+  !insertmacro animedbWritePluginsSelection
+!macroend
 !endif
