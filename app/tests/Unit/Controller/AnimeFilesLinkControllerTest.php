@@ -40,6 +40,7 @@ use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
 use App\Service\AnimeViewFactory;
 use App\Service\Storage\ManualLinkService;
+use App\Service\Storage\StorageLocator;
 use App\Service\Storage\StorageMarkerService;
 use App\Tests\Support\BuildsAnimeDeleteService;
 use Doctrine\DBAL\DriverManager;
@@ -121,9 +122,9 @@ final class AnimeFilesLinkControllerTest extends TestCase
     {
         $markers = new StorageMarkerService($this->entityManager);
         $service = new ManualLinkService(
-            new StorageRepository($this->entityManager),
             new AnimeRepository($this->entityManager),
             new DownloadRepository($this->entityManager),
+            new StorageLocator(new StorageRepository($this->entityManager), $markers, $this->entityManager),
             $markers,
             $this->newJobLockService(),
             $this->entityManager,

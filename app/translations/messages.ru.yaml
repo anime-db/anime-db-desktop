@@ -865,6 +865,9 @@ onboarding:
     import_v1_done_no_report: Импорт завершён.
     import_v1_open_catalog_button: Открыть каталог
 
+explorer_open:
+    error_invalid_path: 'Не удалось открыть папку: это не корректный абсолютный путь.'
+
 storage_edit:
     title: Редактирование хранилища — AnimeDB
     heading: Редактирование хранилища
