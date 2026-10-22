@@ -1,0 +1,66 @@
+{
+    "$comment": "Fingerprint of the extracted directories bin/meilisearch/, bin/qbittorrent-nox/ and bin/ffprobe/ (path -> SHA-256 of every shipped file, dotfiles skipped) for the versions pinned in scripts/versions.json. Captured from the archives by `node scripts/check-bundled-bins.js --write` (runs no binary, works on any OS) after `node scripts/download-bins.js --only meilisearch,qbittorrent-nox,ffprobe`. Rewrite it by hand-run `--write` in the same change that bumps a version pin; the check never rewrites it.",
+    "meilisearch": {
+        "version": "1.13.0",
+        "directoryFingerprint": {
+            "meilisearch.exe": "d9194453bb35ea0f76de3eef3c0693d1577ef6e41b09ee006f5005a56abbca39"
+        }
+    },
+    "qbittorrent-nox": {
+        "version": "5.2.3_2",
+        "directoryFingerprint": {
+            "concrt140.dll": "54716f0738af891f283d213b5c8d11b25896bb8ee3097d301eae718560cf974e",
+            "msvcp140_1.dll": "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982",
+            "msvcp140_2.dll": "d50d7883f20d1dc6191768d3746f52dd9cac89c346ffaed5be1f110c2f34a838",
+            "msvcp140_atomic_wait.dll": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b",
+            "msvcp140_codecvt_ids.dll": "8a65c7596ef2e6938731f5a1058e7e40145b6d97967cc649231a076b9a608d78",
+            "msvcp140.dll": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca",
+            "plugins/sqldrivers/qsqlite.dll": "b9b61897ca4574622fb1949a354846b06964716575707251723596fa3f29ed0c",
+            "plugins/tls/qcertonlybackend.dll": "99d00b37bb2835c539366e4018a58e0ddad21e1c648a3f44f56335a0c1d34765",
+            "plugins/tls/qopensslbackend.dll": "026a841d60e1817466f508d23b3fbb286611baa70170dbc94f5f2a9f9c1689c6",
+            "plugins/tls/qschannelbackend.dll": "b7035c3689b93f55b48112c3e85cf4b8550fefde3f7a044df2784c29330e6940",
+            "qbittorrent-nox.exe": "05b6ef790aa6f6cafbbb9bf1ffce95398cdffe3fa9c2bd9045a1c813303e5730",
+            "qt.conf": "7ec2f5a31e6f507de465358265ee5a430c59b77d37f8b1d98ab2e59785706785",
+            "Qt6Core.dll": "b712b4754588e89f855dc0aa087d6304b2fd21b0e0639d1cdeb9cb969bd5fb72",
+            "Qt6Network.dll": "203f8ddf83c015ce56752ebe7a1986472be7dbb95c20e13ac8e1d741d9ac93d1",
+            "Qt6Sql.dll": "41f42429cf4f96afcb943d3de72d8df1326652b63d967eb5eac9168df798f9df",
+            "Qt6Xml.dll": "6ac5f38fddd0f35e6926f4f7fbb07505c331ba6ef285f4e6a9568bfa98b73677",
+            "README.txt": "f5c43bba99c56ee5206b64b77f10ae494803d8b1abfc4c58852297f6598745bd",
+            "THIRD-PARTY-LICENSES/MSVC-runtime-NOTICE.txt": "9dab3a0d91eb394dcc6489e37aae9ab8333badf18664f68e321aaef2f38226d1",
+            "THIRD-PARTY-LICENSES/OpenSSL-NOTICE.txt": "4d7113e76ec6b16fc21b1f477016a5094f1c7d06af398766827d7c8947153351",
+            "THIRD-PARTY-LICENSES/qBittorrent-NOTICE.txt": "e690cf75b0178ed3b318d9e7d30a01113167e53f2aa1469a61e9b6bdd66347bb",
+            "THIRD-PARTY-LICENSES/Qt-third-party-NOTICE.txt": "3a9eed4d8f92bb930bd10c7f90ddd5e2990d03ae29a719989d06fd62f5d5ed35",
+            "THIRD-PARTY-LICENSES/Qt6-LGPL-NOTICE.txt": "5ccc03eb7fdda49775670b951d23079be98154be82c6488832483fa7c7b5e5eb",
+            "THIRD-PARTY-LICENSES/README.md": "a895550a920bcce3c6343ae4c31fc68ef5949e1b527de7a1276b26874e5e0700",
+            "THIRD-PARTY-LICENSES/SQLite-NOTICE.txt": "7a6a495d3d6191475679cebb47355fa0da0e22ecc85d07b2fec9bf7b9ce3c942",
+            "THIRD-PARTY-LICENSES/texts/Apache-2.0.txt": "3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5",
+            "THIRD-PARTY-LICENSES/texts/BSL-1.0.txt": "beb8e42e9d6b4284e03304d05a81a0755200a965fc8d0a5e0aea1e84cf805d6e",
+            "THIRD-PARTY-LICENSES/texts/GPL-2.0.txt": "498d32907f132c2cd7d3ae269f304aed87156293f63e724b83d9f62ed787d55a",
+            "THIRD-PARTY-LICENSES/texts/GPL-3.0.txt": "230184f60bae2feaf244f10a8bac053c8ff33a183bcc365b4d8b876d2b7f4809",
+            "THIRD-PARTY-LICENSES/texts/LGPL-3.0.txt": "7d3a95e5e06978064ed3f8e2b7c8f845e7fd8a405294727cc708f94cb83b8059",
+            "THIRD-PARTY-LICENSES/texts/libtorrent-BSD.txt": "cf49a9407ed980decc8323e8363f302532c770ad99630911f3b24f2c9a1ee43a",
+            "THIRD-PARTY-LICENSES/texts/PCRE2-BSD.txt": "b5c3d5c419cf0da1db7058a4ad0bc12c3c16338a80469823ef2657b81745928c",
+            "THIRD-PARTY-LICENSES/texts/zlib.txt": "439c75ab12b340c5362b9d4b08ff05ec3a4d0eb7667a6fff49a9b16d8795c78e",
+            "vccorlib140.dll": "09f93d5ff96ae09767f3e1af3cdd43a5a58f2598654fc63089429bb6f9f4737f",
+            "vcruntime140_1.dll": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e",
+            "vcruntime140_threads.dll": "40f39e8cee5f5a531b4010e18b807e8fe265b908dc58f959ecb7ebc6ea6cb11a",
+            "vcruntime140.dll": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7",
+            "versions.txt": "d963a63570abb8fa8e50ef89c66e4b155ba37632efa1c105c9f56e8dcfe0a47e"
+        }
+    },
+    "ffprobe": {
+        "version": "9.0.2_1",
+        "directoryFingerprint": {
+            "BUNDLE-README.txt": "92dd1261ec2e1cd7022b21a9376c0fbe294e0dcb4b36a1a86b38ed2918ed5fad",
+            "ffprobe.exe": "1d2a1ddbacca86edef39019ed289ddd13b7fa369db414a7d84268a96d026dcac",
+            "THIRD-PARTY-LICENSES/README.md": "c797c6e57197deafa431b67580545e828c58893be332b379dadbf97098b9ff13",
+            "THIRD-PARTY-LICENSES/texts/COPYING.LGPLv2.1": "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30",
+            "THIRD-PARTY-LICENSES/texts/COPYING.MinGW-w64-runtime.txt": "1db8da07b436c68833c0673ffee3d9fcb2526047f3820b81661865dfedc79a1f",
+            "THIRD-PARTY-LICENSES/texts/FFmpeg-LICENSE.md": "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af",
+            "THIRD-PARTY-LICENSES/texts/RUNTIME.LIBRARY.EXCEPTION": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74",
+            "THIRD-PARTY-LICENSES/texts/winpthreads-LICENSE.txt": "63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177",
+            "THIRD-PARTY-LICENSES/texts/zlib-LICENSE.txt": "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2",
+            "versions.txt": "c70ff4d841eb74ac4dec19b71fc7ce496bc703df4b0963eed596f814dd0de34f"
+        }
+    }
+}

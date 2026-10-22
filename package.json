@@ -16,6 +16,7 @@
         "download-e2e-runtime": "node scripts/download-e2e-runtime.js",
         "generate-php-ini": "node scripts/generate-php-ini.js",
         "check-runtime-parity": "node scripts/check-runtime-parity.js",
+        "check-bundled-bins": "node scripts/check-bundled-bins.js",
         "release-smoke": "node scripts/release-smoke.js",
         "shots": "node scripts/shots/run.js",
         "e2e": "node scripts/e2e/run.js",
