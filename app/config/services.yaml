@@ -126,6 +126,8 @@ parameters:
     # above.
     app.icons_dir: '%kernel.project_dir%/templates/icons'
 
+    app.storage_icons_dir: '%kernel.project_dir%/resources/storage-icons'
+
     # Meilisearch process endpoint (native/supervisor/meilisearch.js) and its master key,
     # both already provisioned in production by Electron (issue #8) — see .env for dev defaults.
     app.meilisearch.url: '%env(MEILISEARCH_URL)%'
@@ -435,3 +437,7 @@ services:
     # Starting PowerShell is Windows-only and slow; the name hint of the new-storage form depends on
     # this interface so tests can substitute it.
     App\Service\Storage\VolumeProbeInterface: '@App\Service\Storage\PowerShellVolumeProbe'
+
+    App\Service\Storage\StorageIconService:
+        arguments:
+            $iconsDir: '%app.storage_icons_dir%'

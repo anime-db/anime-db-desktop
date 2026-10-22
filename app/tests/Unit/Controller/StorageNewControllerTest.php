@@ -31,6 +31,7 @@ use App\Controller\StorageNewController;
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Service\Storage\AutorunInfReader;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerService;
 use App\Service\Storage\StorageNameHinter;
 use App\Service\Storage\VolumeInfo;
@@ -98,6 +99,7 @@ final class StorageNewControllerTest extends TestCase
         return new StorageNewController(
             $entityManager ?? $this->createStub(EntityManagerInterface::class),
             $markerService,
+            new StorageIconService($markerService, new AutorunInfReader(), '/nonexistent-storage-icons'),
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),

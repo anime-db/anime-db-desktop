@@ -33,6 +33,8 @@ use App\Entity\Storage;
 use App\Repository\DownloadRepository;
 use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
+use App\Service\Storage\AutorunInfReader;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
@@ -57,6 +59,9 @@ final class StorageEditControllerTest extends TestCase
             $marker = $dir.\DIRECTORY_SEPARATOR.'desktop.ini';
             if (is_file($marker)) {
                 unlink($marker);
+            }
+            foreach (glob($dir.\DIRECTORY_SEPARATOR.'animedb-*.ico') ?: [] as $icon) {
+                unlink($icon);
             }
             if (is_dir($dir)) {
                 rmdir($dir);
@@ -96,6 +101,7 @@ final class StorageEditControllerTest extends TestCase
         ?Environment $twig = null,
         ?DownloadRepository $downloads = null,
         ?AppSettingsProvider $settings = null,
+        ?StorageIconService $iconService = null,
     ): StorageEditController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -121,6 +127,7 @@ final class StorageEditControllerTest extends TestCase
         return new StorageEditController(
             $entityManager ?? $this->createStub(EntityManagerInterface::class),
             $markerService,
+            $iconService ?? new StorageIconService($markerService, new AutorunInfReader(), '/nonexistent-storage-icons'),
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
@@ -208,6 +215,55 @@ final class StorageEditControllerTest extends TestCase
         $marker = parse_ini_file($dir.\DIRECTORY_SEPARATOR.'desktop.ini', true, \INI_SCANNER_RAW);
         $this->assertIsArray($marker);
         $this->assertSame('8', $marker['AnimeDB']['id']);
+    }
+
+    public function testUpdateAppliesIconWhenMarkerIsOwned(): void
+    {
+        $dir = $this->makeDir();
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->setStorageId($storage, 21);
+
+        $this->updateWithRealIcons($storage, $dir, $this->markerEntityManager(null));
+
+        $this->assertFileExists($dir.\DIRECTORY_SEPARATOR.'animedb-folder.ico');
+        $this->assertStringContainsString('IconResource=animedb-folder.ico,0', (string) file_get_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini'));
+    }
+
+    public function testUpdateDoesNotApplyIconOnMarkerConflict(): void
+    {
+        $dir = $this->makeDir();
+        file_put_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid=99\n");
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->setStorageId($storage, 22);
+
+        $this->updateWithRealIcons($storage, $dir, $this->markerEntityManager(new Storage('Other', '/elsewhere', StorageType::Folder)));
+
+        $this->assertFileDoesNotExist($dir.\DIRECTORY_SEPARATOR.'animedb-folder.ico');
+        $this->assertSame("[AnimeDB]\nid=99\n", file_get_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini'));
+    }
+
+    private function markerEntityManager(?Storage $owner): EntityManagerInterface
+    {
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $entityManager->method('find')->willReturn($owner);
+
+        return $entityManager;
+    }
+
+    private function updateWithRealIcons(Storage $storage, string $dir, EntityManagerInterface $markerEntityManager): void
+    {
+        $markerService = new StorageMarkerService($markerEntityManager);
+        $controller = $this->createController(
+            markerService: $markerService,
+            iconService: new StorageIconService($markerService, new AutorunInfReader(), __DIR__.'/../../../resources/storage-icons'),
+        );
+
+        $controller->update($storage, Request::create('/storage/'.$storage->id.'/edit', 'POST', [
+            'name' => 'Main folder',
+            'path' => $dir,
+            'type' => 'folder',
+            '_token' => 'token',
+        ]));
     }
 
     public function testUpdateRelocatesStorageToNewExistingPath(): void

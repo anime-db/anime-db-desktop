@@ -33,6 +33,7 @@ use App\Entity\Exception\InvalidPathException;
 use App\Entity\Storage;
 use App\Repository\DownloadRepository;
 use App\Service\AppSettingsProvider;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -76,6 +77,7 @@ final class StorageEditController
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly StorageMarkerService $markerService,
+        private readonly StorageIconService $iconService,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
@@ -161,14 +163,18 @@ final class StorageEditController
 
         if ($storage->getPath() !== $previousPath) {
             if ($previousPath !== null) {
+                // Before forget(): the icon is only taken back from a root whose marker still names the storage.
+                $this->iconService->remove($storage, $previousPath);
                 $this->markerService->forget($storage, $previousPath);
             }
+        } elseif ($typeChangingToUnwritable && $previousPath !== null) {
+            $this->iconService->remove($storage, $previousPath);
         }
 
         $this->entityManager->flush();
 
-        if ($type->isWritable()) {
-            $this->markerService->reconcile($storage);
+        if ($type->isWritable() && $this->markerService->reconcile($storage)->ownsPath()) {
+            $this->iconService->apply($storage);
         }
 
         return new RedirectResponse($this->urlGenerator->generate('storage_index'));

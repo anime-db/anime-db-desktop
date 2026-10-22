@@ -71,6 +71,7 @@ final class ScanStorageService
 
     public function __construct(
         private readonly StorageMarkerService $markerService,
+        private readonly StorageIconService $iconService,
         private readonly FilenameCleaner $filenameCleaner,
         private readonly OrphanAnimeMatcher $orphanMatcher,
         private readonly SearchByPluginChain $pluginChain,
@@ -133,8 +134,14 @@ final class ScanStorageService
             $this->markerService->relocateIfMarkerMoved($storage, $atPath);
         }
 
-        if ($this->markerService->reconcile($storage) === StorageMarkerResult::Conflict) {
+        $marker = $this->markerService->reconcile($storage);
+
+        if ($marker === StorageMarkerResult::Conflict) {
             return ScanResult::conflict();
+        }
+
+        if ($marker->ownsPath()) {
+            $this->iconService->apply($storage);
         }
 
         $path = $storage->requirePath();

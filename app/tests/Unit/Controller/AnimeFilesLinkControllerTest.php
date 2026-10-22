@@ -39,7 +39,9 @@ use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
 use App\Service\AnimeViewFactory;
+use App\Service\Storage\AutorunInfReader;
 use App\Service\Storage\ManualLinkService;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageLocator;
 use App\Service\Storage\StorageMarkerService;
 use App\Tests\Support\BuildsAnimeDeleteService;
@@ -126,6 +128,7 @@ final class AnimeFilesLinkControllerTest extends TestCase
             new DownloadRepository($this->entityManager),
             new StorageLocator(new StorageRepository($this->entityManager), $markers, $this->entityManager),
             $markers,
+            new StorageIconService($markers, new AutorunInfReader(), '/nonexistent-storage-icons'),
             $this->newJobLockService(),
             $this->entityManager,
             new EventDispatcher(),

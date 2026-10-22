@@ -39,6 +39,7 @@ use App\Service\Storage\Scan\ScanRun;
 use App\Service\Storage\Scan\ScanRunJournal;
 use App\Service\Storage\Scan\ScanRunStatus;
 use App\Service\Storage\StorageAvailabilityService;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -86,6 +87,7 @@ final class StorageController
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
         private readonly StorageMarkerService $storageMarker,
+        private readonly StorageIconService $storageIcon,
         private readonly StorageAvailabilityService $storageAvailability,
         private readonly JobLockService $jobLockService,
         private readonly DownloadRepository $downloads,
@@ -239,6 +241,7 @@ final class StorageController
             return $this->renderIndex('storage_list.delete_error_unfinished_downloads', ['%name%' => $storage->getName()]);
         }
 
+        $this->storageIcon->remove($storage);
         $this->storageMarker->forget($storage);
 
         // The FK would null storage_id behind the UnitOfWork's back and leave storage_path dangling:

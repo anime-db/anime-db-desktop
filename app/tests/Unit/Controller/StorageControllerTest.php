@@ -46,10 +46,12 @@ use App\Service\AppConfigStore;
 use App\Service\AppSettingsProvider;
 use App\Service\JobLock\JobLockService;
 use App\Service\JobLock\ProcessLivenessChecker;
+use App\Service\Storage\AutorunInfReader;
 use App\Service\Storage\Scan\ScanItemResolver;
 use App\Service\Storage\Scan\ScanRunJournal;
 use App\Service\Storage\Scan\ScanRunStatus;
 use App\Service\Storage\StorageAvailabilityService;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerService;
 use App\Tests\Support\CreatesInMemoryEntityManager;
 use App\Tests\Support\RunsMigrations;
@@ -200,6 +202,7 @@ final class StorageControllerTest extends TestCase
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
             $storageMarker,
+            new StorageIconService($storageMarker, new AutorunInfReader(), '/nonexistent-storage-icons'),
             $storageAvailability ?? new StorageAvailabilityService(),
             $jobLockService,
             $downloads,

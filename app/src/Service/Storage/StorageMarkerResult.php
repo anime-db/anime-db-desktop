@@ -46,4 +46,13 @@ enum StorageMarkerResult
 
     /** The marker could not be written; the path was left untouched. */
     case WriteFailed;
+
+    /** Whether the path now carries this Storage's marker, so files may be placed there on its behalf. */
+    public function ownsPath(): bool
+    {
+        return match ($this) {
+            self::Created, self::Owned, self::Reclaimed => true,
+            self::Conflict, self::Unreadable, self::WriteFailed => false,
+        };
+    }
 }

@@ -42,9 +42,11 @@ use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
 use App\Repository\StorageRepository;
 use App\Service\JobLock\JobLockService;
+use App\Service\Storage\AutorunInfReader;
 use App\Service\Storage\ManualLinkResult;
 use App\Service\Storage\ManualLinkService;
 use App\Service\Storage\ManualLinkStatus;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageLocator;
 use App\Service\Storage\StorageMarkerService;
 use App\Tests\Support\BuildsAnimeDeleteService;
@@ -130,6 +132,7 @@ final class ManualLinkServiceTest extends TestCase
             new DownloadRepository($this->entityManager),
             new StorageLocator(new StorageRepository($this->entityManager), $this->markers, $this->entityManager),
             $this->markers,
+            new StorageIconService($this->markers, new AutorunInfReader(), '/nonexistent-storage-icons'),
             $this->jobLock,
             $this->entityManager,
             $this->dispatcher,

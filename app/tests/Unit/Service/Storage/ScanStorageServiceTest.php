@@ -51,6 +51,7 @@ use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Storage\AutorunInfReader;
 use App\Service\Storage\Exception\StoragePathConflictException;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
@@ -59,6 +60,7 @@ use App\Service\Storage\Scan\ScanItemType;
 use App\Service\Storage\Scan\ScanResultItem;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\SearchByPluginChain;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerService;
 use App\Service\Storage\StorageRootInspector;
 use App\Tests\Support\BuildsAnimeDeleteService;
@@ -154,6 +156,7 @@ final class ScanStorageServiceTest extends TestCase
     {
         return new ScanStorageService(
             new StorageMarkerService($this->entityManager),
+            new StorageIconService(new StorageMarkerService($this->entityManager), new AutorunInfReader(), '/nonexistent-storage-icons'),
             new FilenameCleaner(),
             new OrphanAnimeMatcher($this->animeRepository),
             $pluginChain ?? new SearchByPluginChain([], new PluginsConfigStore(''), new \App\Service\Plugin\DefaultSearchPluginRegistry([], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class))),
@@ -1208,6 +1211,7 @@ final class ScanStorageServiceTest extends TestCase
 
         $service = new ScanStorageService(
             new StorageMarkerService($this->entityManager),
+            new StorageIconService(new StorageMarkerService($this->entityManager), new AutorunInfReader(), '/nonexistent-storage-icons'),
             new FilenameCleaner(),
             new OrphanAnimeMatcher($racyAnimeRepository),
             $pluginChain,

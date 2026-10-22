@@ -35,14 +35,15 @@ use Psr\Log\NullLogger;
 /**
  * Identifies which Storage a filesystem path belongs to via a `desktop.ini` marker in its
  * root, independent of the path itself (drive letter, mount point) — the v2 equivalent of v1's
- * `.storage` marker / `ScanStoragesCommand::checkStorageId()`. Only the `[AnimeDB]` section is
- * ever touched; any `[.ShellClassInfo]` section a future icon-marking feature adds is preserved
- * as-is on rewrite.
+ * `.storage` marker / `ScanStoragesCommand::checkStorageId()`. Only the `[AnimeDB]` section and,
+ * through readShellClassInfo()/setShellClassInfoValue() for the storage icon, single keys of
+ * `[.ShellClassInfo]` are ever touched; everything else is preserved as-is on rewrite.
  */
 final class StorageMarkerService
 {
     private const MARKER_FILENAME = 'desktop.ini';
     private const SECTION = 'AnimeDB';
+    private const SHELL_SECTION = '.ShellClassInfo';
 
     /**
      * @param ?iterable<string> $driveRoots overrides the drives searched by findByMarker() —
@@ -204,6 +205,65 @@ final class StorageMarkerService
         return rtrim($matches[1], '\\/');
     }
 
+    /**
+     * Keys of the `[.ShellClassInfo]` section of $storagePath's desktop.ini as lowercase key => trimmed
+     * value, [] when the file or the section is missing, null when the file cannot be parsed. Section and
+     * key names are matched ignoring case — Windows reads INI files that way, parse_ini_file() does not —
+     * and the first duplicate wins, like Windows.
+     *
+     * @return ?array<string, string>
+     */
+    public function readShellClassInfo(string $storagePath): ?array
+    {
+        $markerPath = $this->markerPath($storagePath);
+
+        if (!is_file($markerPath)) {
+            return [];
+        }
+
+        if ($this->isUnreadable($markerPath)) {
+            return null;
+        }
+
+        $lines = preg_split('/\r\n|\n|\r/', (string) file_get_contents($markerPath));
+        \assert(\is_array($lines));
+        $range = $this->sectionRange($lines, self::SHELL_SECTION, true);
+        $values = [];
+
+        if ($range === null) {
+            return [];
+        }
+
+        for ($i = $range[0] + 1; $i < $range[1]; ++$i) {
+            if (preg_match('/^\s*([^=;\[][^=]*?)\s*=\s*(.*?)\s*$/', $lines[$i], $m) === 1) {
+                $values[strtolower($m[1])] ??= $m[2];
+            }
+        }
+
+        return $values;
+    }
+
+    /**
+     * Sets (or, with a null $value, removes) one key of the `[.ShellClassInfo]` section, leaving every
+     * other key and section as it is; an emptied section is removed. Nothing is written when the file
+     * already says so, or when it cannot be parsed. The file is kept hidden + system, which Explorer
+     * requires of a desktop.ini it should honour. Returns false when the file was left unparsed or the
+     * write failed.
+     */
+    public function setShellClassInfoValue(string $storagePath, string $key, ?string $value): bool
+    {
+        $markerPath = $this->markerPath($storagePath);
+
+        if ($this->isUnreadable($markerPath)) {
+            return false;
+        }
+
+        $content = is_file($markerPath) ? (string) file_get_contents($markerPath) : '';
+        $updated = $this->withShellValue($content, $key, $value);
+
+        return $updated === $content || $this->writeFile($markerPath, $updated, true);
+    }
+
     /** The Storage id recorded in the `[AnimeDB]` section of $storagePath's marker, or null when there is none. */
     public function readMarkerId(string $storagePath): ?int
     {
@@ -301,6 +361,58 @@ final class StorageMarkerService
         return implode($eol, $lines);
     }
 
+    /** Sets/removes $key in the `[.ShellClassInfo]` section of $content, editing line by line so everything else stays byte-identical. */
+    private function withShellValue(string $content, string $key, ?string $value): string
+    {
+        $eol = str_contains($content, "\r\n") ? "\r\n" : "\n";
+        $lines = $content === '' ? [] : preg_split('/\r\n|\n|\r/', $content);
+        \assert(\is_array($lines));
+        $range = $this->sectionRange($lines, self::SHELL_SECTION, true);
+
+        if ($range === null) {
+            if ($value === null) {
+                return $content;
+            }
+            if ($lines !== [] && end($lines) === '') {
+                array_pop($lines);
+            }
+            $lines[] = '['.self::SHELL_SECTION.']';
+            $lines[] = "$key=$value";
+            $lines[] = '';
+
+            return implode($eol, $lines);
+        }
+
+        [$start, $end] = $range;
+        $found = false;
+        $pattern = '/^\s*'.preg_quote($key, '/').'\s*=/i';
+        for ($i = $start + 1; $i < $end; ++$i) {
+            if (preg_match($pattern, $lines[$i]) !== 1) {
+                continue;
+            }
+            if (!$found && $value !== null) {
+                $lines[$i] = "$key=$value";
+                $found = true;
+
+                continue;
+            }
+            // Duplicates (and the line itself on removal) go, so what Windows reads is what was set.
+            array_splice($lines, $i, 1);
+            --$i;
+            --$end;
+        }
+
+        if ($value !== null && !$found) {
+            array_splice($lines, $start + 1, 0, ["$key=$value"]);
+        }
+
+        if ($value === null && trim(implode('', \array_slice($lines, $start + 1, $end - $start - 1))) === '') {
+            array_splice($lines, $start, $end - $start);
+        }
+
+        return implode($eol, $lines);
+    }
+
     /** Removes the `[AnimeDB]` section (header through the line before the next section) from $content. */
     private function withoutMarkerSection(string $content): string
     {
@@ -321,9 +433,9 @@ final class StorageMarkerService
     /**
      * @param list<string> $lines
      *
-     * @return ?array{int, int} [index of the `[AnimeDB]` header line, index of the next section header or line count]
+     * @return ?array{int, int} [index of the section header line, index of the next section header or line count]
      */
-    private function sectionRange(array $lines): ?array
+    private function sectionRange(array $lines, string $section = self::SECTION, bool $ignoreCase = false): ?array
     {
         $start = null;
 
@@ -334,7 +446,7 @@ final class StorageMarkerService
             if ($start !== null) {
                 return [$start, $i];
             }
-            if (trim($m[1]) === self::SECTION) {
+            if ($ignoreCase ? strcasecmp(trim($m[1]), $section) === 0 : trim($m[1]) === $section) {
                 $start = $i;
             }
         }
@@ -345,12 +457,13 @@ final class StorageMarkerService
     /**
      * Writes $content to the marker. An existing hidden/system file refuses writes on Windows, so
      * its attributes are lifted for the write and put back afterwards; a new file becomes hidden.
-     * A failed write is logged, never thrown, and reported as false.
+     * A failed write is logged, never thrown, and reported as false. With $system the file also
+     * ends up as a system file, the other half of what makes Explorer read a desktop.ini.
      */
-    private function writeFile(string $markerPath, string $content): bool
+    private function writeFile(string $markerPath, string $content, bool $system = false): bool
     {
         $existed = is_file($markerPath);
-        $attributes = ['H' => !$existed, 'S' => false];
+        $attributes = ['H' => !$existed, 'S' => $system];
 
         // The app only ships for Windows (see .claude-docs/architecture.md); the test suite
         // also runs on ubuntu-latest CI (.github/workflows/ci.yml), where `attrib` doesn't
@@ -359,7 +472,7 @@ final class StorageMarkerService
             $read = $this->readAttributes($markerPath);
             // Unexpected attrib output: leave the attributes alone rather than guess.
             if ($read !== null) {
-                $attributes = $read;
+                $attributes = ['H' => $read['H'], 'S' => $read['S'] || $system];
                 exec('attrib -S -H '.escapeshellarg($markerPath));
             }
         }

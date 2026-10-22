@@ -608,3 +608,13 @@ electron-builder подключает пользовательский include (
 Так же в `build/installer.nsh` не определены макросы `MUI2.nsh` (`MUI2.nsh` подключает `installer.nsi:9`, уже после нашего
 файла): `!insertmacro MUI_HEADER_TEXT` даёт `macro named "MUI_HEADER_TEXT" not found!`. Нужен явный `!include MUI2.nsh`
 (защита `!ifndef MUI_INCLUDED` делает повторное подключение из шаблона безопасным); страж проверяет и это.
+
+## Иконка хранилища (`StorageIconService`): чужое не трогаем, `remove()` — до `forget()`
+
+Иконка, `autorun.inf` и `IconResource` считаются нашими, только если запись называет `animedb-folder.ico` /
+`animedb-external.ico` **и** маркер корня несёт id этого хранилища. Поэтому `remove()` обязан идти **до**
+`StorageMarkerService::forget()` (тот стирает маркер), а `apply()` вызывается только при `reconcile()->ownsPath()`
+(Created/Owned/Reclaimed). Корень диска (`^[A-Za-z]:\\?$`) получает `autorun.inf` (UTF-16 LE с BOM, CRLF), прочее —
+`IconResource` в `[.ShellClassInfo]` того же `desktop.ini` + `attrib +R` папке. Секции и ключи `desktop.ini` Windows
+читает без учёта регистра, `parse_ini_file` — с учётом, поэтому секция `.ShellClassInfo` читается и пишется
+`StorageMarkerService::readShellClassInfo()` / `setShellClassInfoValue()`, а не `parse_ini_file`.
