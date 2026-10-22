@@ -244,6 +244,32 @@ describe('name hint', () => {
         }
     });
 
+    test('a prefilled path with an empty name requests the hint on load and fills the name', async () => {
+        setUpDom('local');
+        document.getElementById('storage-new-path').value = 'D:\\';
+        global.fetch = jest.fn(() => hintResponse('Backup'));
+        loadStorageNewModule();
+        await flushMicrotasks();
+
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        expect(global.fetch.mock.calls[0][0]).toBe('/storage/new/name-hint?path=D%3A%5C');
+        expect(global.fetch.mock.calls[0][1].headers['X-AnimeDB-Shell']).toBe('1');
+        expect(nameField().value).toBe('Backup');
+    });
+
+    test('a name rendered by the server does not trigger a request on load', async () => {
+        setUpDom('local');
+        document.getElementById('storage-new-path').value = '/media/anime';
+        nameField().value = 'anime';
+        nameField().dataset.nameHint = 'anime';
+        global.fetch = jest.fn(() => hintResponse('Other'));
+        loadStorageNewModule();
+        await flushMicrotasks();
+
+        expect(global.fetch).not.toHaveBeenCalled();
+        expect(nameField().value).toBe('anime');
+    });
+
     test('the server-rendered hint from the data attribute is replaced on a path change', async () => {
         setUpDom('local');
         nameField().value = 'Rendered';
