@@ -44,13 +44,20 @@ final class PowerShellVolumeProbe implements VolumeProbeInterface
     public function __construct(
         private readonly float $timeout = 5.0,
         private readonly bool $windows = \PHP_OS_FAMILY === 'Windows',
+        /** @var (\Closure(list<string>, float): Process)|null creates the process; replaced in tests */
+        private readonly ?\Closure $processFactory = null,
     ) {
     }
 
-    public function probe(string $letter): ?VolumeInfo
+    /**
+     * The command line for a drive letter, or null when the letter is not a single ASCII letter.
+     * The letter goes into the script text, so nothing else may pass.
+     *
+     * @return list<string>|null
+     */
+    public function buildCommand(string $letter): ?array
     {
-        // The letter goes into a command line, so only a single ASCII letter passes.
-        if (!$this->windows || preg_match('/^[A-Za-z]$/', $letter) !== 1) {
+        if (preg_match('/^[A-Za-z]$/D', $letter) !== 1) {
             return null;
         }
 
@@ -59,7 +66,19 @@ final class PowerShellVolumeProbe implements VolumeProbeInterface
             ."try{\$label=[System.IO.DriveInfo]::new('".$letter."').VolumeLabel}catch{};"
             .'ConvertTo-Json -Compress -InputObject @{label=$label}';
 
-        $process = new Process(['powershell', '-NoProfile', '-NonInteractive', '-Command', $script], null, null, null, $this->timeout);
+        return ['powershell', '-NoProfile', '-NonInteractive', '-Command', $script];
+    }
+
+    public function probe(string $letter): ?VolumeInfo
+    {
+        $command = $this->windows ? $this->buildCommand($letter) : null;
+        if ($command === null) {
+            return null;
+        }
+
+        $process = $this->processFactory !== null
+            ? ($this->processFactory)($command, $this->timeout)
+            : new Process($command, null, null, null, $this->timeout);
 
         try {
             $process->run();

@@ -28,7 +28,9 @@ declare(strict_types=1);
 namespace App\Tests\Unit\Service\Storage;
 
 use App\Service\Storage\PowerShellVolumeProbe;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\Process;
 
 final class PowerShellVolumeProbeTest extends TestCase
 {
@@ -37,9 +39,45 @@ final class PowerShellVolumeProbeTest extends TestCase
         $this->assertNull((new PowerShellVolumeProbe(windows: false))->probe('D'));
     }
 
-    public function testRejectsAnythingButASingleLetter(): void
+    /** @return array<string, array{string}> */
+    public static function invalidLetters(): array
     {
-        $this->assertNull((new PowerShellVolumeProbe(windows: true))->probe("D');calc;('"));
-        $this->assertNull((new PowerShellVolumeProbe(windows: true))->probe('DD'));
+        return [
+            'injection' => ["D');calc;('"],
+            'two letters' => ['DD'],
+            'trailing newline' => ["D\n"],
+            'digit' => ['1'],
+            'empty' => [''],
+        ];
+    }
+
+    #[DataProvider('invalidLetters')]
+    public function testInvalidLetterNeverCreatesAProcess(string $letter): void
+    {
+        $created = 0;
+        $probe = new PowerShellVolumeProbe(windows: true, processFactory: static function () use (&$created): Process {
+            ++$created;
+
+            return new Process(['true']);
+        });
+
+        $this->assertNull($probe->buildCommand($letter));
+        $this->assertNull($probe->probe($letter));
+        $this->assertSame(0, $created);
+    }
+
+    public function testValidLetterBuildsTheScriptAndRunsTheFactoryProcess(): void
+    {
+        $command = null;
+        $probe = new PowerShellVolumeProbe(windows: true, processFactory: static function (array $given) use (&$command): Process {
+            $command = $given;
+
+            return new Process(['php', '-r', 'echo \'{"label":"Backup"}\';']);
+        });
+
+        $this->assertSame('Backup', $probe->probe('D')?->label);
+        $this->assertIsArray($command);
+        $this->assertSame('powershell', $command[0]);
+        $this->assertStringContainsString("DriveInfo]::new('D')", $command[array_key_last($command)]);
     }
 }

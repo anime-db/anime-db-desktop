@@ -112,6 +112,11 @@
 
         pathInput.addEventListener('change', requestNameHint);
 
+        // A prefilled path whose name the server could not suggest (a drive root needs the guarded endpoint).
+        if (nameInput && pathInput.value.trim() !== '' && nameInput.value === '') {
+            requestNameHint();
+        }
+
         typeSelect.addEventListener('change', updatePickButtonVisibility);
         typeSelect.addEventListener('change', updatePathRequired);
         typeSelect.addEventListener('change', updatePathApplicable);

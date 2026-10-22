@@ -163,6 +163,26 @@ final class StorageNewControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
+        $this->createController(twig: $twig, volumeProbe: $probe)->new(Request::create(
+            '/storage/new',
+            'GET',
+            ['path' => 'D:\\'],
+            server: ['HTTP_HOST' => '127.0.0.1', 'HTTP_X_ANIMEDB_SHELL' => '1'],
+        ));
+    }
+
+    public function testNewDoesNotProbeADriveWithoutShellHeader(): void
+    {
+        $probe = $this->createMock(VolumeProbeInterface::class);
+        $probe->expects($this->never())->method('probe');
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['name'] === '' && $params['name_hint'] === null && $params['path'] === 'D:\\',
+            ))
+            ->willReturn('<html></html>');
+
         $this->createController(twig: $twig, volumeProbe: $probe)->new(Request::create('/storage/new', 'GET', ['path' => 'D:\\']));
     }
 

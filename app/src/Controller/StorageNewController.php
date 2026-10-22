@@ -71,7 +71,9 @@ final class StorageNewController
     {
         // Prefilled by the "create storage" link of an entry's Files block (issue #997).
         $path = (string) $request->query->get('path', '');
-        $hint = $path === '' ? null : $this->nameHinter->hint($path);
+        // An unverified GET must not reach the filesystem or spawn a process (a drive root is
+        // looked up only for the shell); the form's JS asks the guarded endpoint for that hint.
+        $hint = $path === '' ? null : $this->nameHinter->hint($path, ShellRequestGuard::isShellRequest($request));
 
         return $this->renderForm(name: $hint ?? '', path: $path, nameHint: $hint);
     }

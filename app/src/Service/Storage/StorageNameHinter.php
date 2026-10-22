@@ -47,12 +47,16 @@ final class StorageNameHinter
     ) {
     }
 
-    public function hint(string $path): ?string
+    /**
+     * @param bool $touchDrive whether a drive root may be looked up on disk; false for a request
+     *                         that did not come from the desktop shell (see ShellRequestGuard)
+     */
+    public function hint(string $path, bool $touchDrive = true): ?string
     {
         $path = trim($path);
 
         if (preg_match(self::DRIVE_ROOT_PATTERN, $path, $matches) === 1) {
-            return $this->driveRootName($matches[1]);
+            return $touchDrive ? $this->driveRootName($matches[1]) : null;
         }
 
         $segments = array_values(array_filter(
