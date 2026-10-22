@@ -31,8 +31,9 @@
  *            user, password
  *            dir         application directory relative to the FTP login root
  *            public_url  HTTPS base URL of that directory, used for the check
- *            protocol    optional, `ftp` (explicit TLS, default) or `ftps` (implicit TLS)
- *            port        optional, 21 / 990 by default
+ *            protocol    optional, `ftps` (default) or `ftp`; both mean explicit TLS (AUTH TLS),
+ *                        as in the plugins mirror format, never plain FTP (`--ssl-reqd`)
+ *            port        optional, 21 by default
  * Layout:  <dir>/<version>/<file>..., <dir>/latest.yml.sig, <dir>/latest.yml, uploaded in that
  *          order, so latest.yml never points at files that are not there yet. Nothing is deleted:
  *          older versions are needed for differential downloads.
@@ -126,10 +127,9 @@ function collectRelease(dir) {
 }
 
 function ftpUrl(mirror, rel) {
-    const implicit = mirror.protocol === 'ftps';
-    const port = mirror.port ?? (implicit ? 990 : 21);
+    const port = mirror.port ?? 21;
     const segments = [...mirror.dir.split('/'), ...rel.split('/')].filter((s) => s !== '').map(encodeURIComponent);
-    return `${implicit ? 'ftps' : 'ftp'}://${mirror.host}:${port}/${segments.join('/')}`;
+    return `ftp://${mirror.host}:${port}/${segments.join('/')}`;
 }
 
 function publicUrl(mirror, rel) {

@@ -180,10 +180,12 @@ describe('publish-update-mirror.js', () => {
         expect(f.curl).not.toHaveBeenCalled();
     });
 
-    test('parseCreds and ftpUrl: implicit TLS and port', () => {
-        const creds = parseCreds(JSON.stringify({ a: { ...mirror('a'), protocol: 'ftps', port: 2121 } }));
+    test('parseCreds and ftpUrl: explicit TLS on port 21 for any protocol', () => {
+        const creds = parseCreds(JSON.stringify({ a: { ...mirror('a'), protocol: 'ftps', port: 2121 }, b: { ...mirror('b'), protocol: 'ftps' }, c: mirror('c') }));
 
-        expect(ftpUrl(creds.a, '1.2.3/x y.exe')).toBe('ftps://ftp.a.test:2121/app/1.2.3/x%20y.exe');
+        expect(ftpUrl(creds.a, '1.2.3/x y.exe')).toBe('ftp://ftp.a.test:2121/app/1.2.3/x%20y.exe');
+        expect(ftpUrl(creds.b, '1.2.3/x.exe')).toBe('ftp://ftp.b.test:21/app/1.2.3/x.exe');
+        expect(ftpUrl(creds.c, '1.2.3/x.exe')).toBe('ftp://ftp.c.test:21/app/1.2.3/x.exe');
         expect(() => parseCreds(JSON.stringify({ a: { ...mirror('a'), protocol: 'http' } }))).toThrow('protocol');
     });
 

@@ -222,19 +222,32 @@ describe('check-update-verifier.js', () => {
         function withKeys(list) {
             fs.copyFileSync(module, path.join(tmp, 'signature.js'));
             fs.writeFileSync(path.join(tmp, 'update-keys.json'), JSON.stringify(list.map((k) => k.toString('base64'))));
-            return script('check-update-verifier.js', [path.join(tmp, 'signature.js')]).code;
+            return script('check-update-verifier.js', [path.join(tmp, 'signature.js')]);
         }
 
         test('fails without a backup key', () => {
-            expect(withKeys([keys[0]])).toBe(1);
+            const r = withKeys([keys[0]]);
+
+            expect(r.code).toBe(1);
+            expect(r.out).toContain('no backup key');
         });
 
         test('fails when the keys are swapped', () => {
-            expect(withKeys([keys[1], keys[0]])).toBe(1);
+            const r = withKeys([keys[1], keys[0]]);
+
+            expect(r.code).toBe(1);
+            expect(r.out).toContain('does not verify with the backup key');
+        });
+
+        test('fails when the backup key stands in the working slot', () => {
+            const r = withKeys([keys[1], keys[1]]);
+
+            expect(r.code).toBe(1);
+            expect(r.out).toContain('verifies with the working key');
         });
 
         test('passes with the right order (control)', () => {
-            expect(withKeys([keys[0], keys[1]])).toBe(0);
+            expect(withKeys([keys[0], keys[1]]).code).toBe(0);
         });
     });
 
