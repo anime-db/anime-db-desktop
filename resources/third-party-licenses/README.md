@@ -46,7 +46,8 @@ All paths below are relative to the AnimeDB installation directory.
 
 The npm packages under `electron-updater` are argparse, builder-util-runtime, debug,
 fs-extra, graceful-fs, js-yaml, jsonfile, lazy-val, lodash.escaperegexp,
-lodash.isequal, ms, sax, semver, tiny-typed-emitter and universalify. Every one
+lodash.isequal, ms, sax, semver, tiny-typed-emitter and universalify (semver is
+also a direct dependency of the application, used by the update provider). Every one
 ships its own `LICENSE` file except `lazy-val`, whose MIT text is kept in
 `texts/lazy-val-MIT.txt`.
 

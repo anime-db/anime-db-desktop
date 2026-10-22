@@ -59,7 +59,10 @@ HTTP-shutdown в Symfony не подходит: FrankenPHP — Go-процесс
 
 ## Обновление приложения — electron-updater
 
-Канал — GitHub Releases без подписи (ни Authenticode, ни подписи `latest.yml`); целостность — sha512 из `latest.yml` того же релиза. Зеркала и подпись — позже. Провайдер `github` (`anime-db/anime-db-desktop`), `allowPrerelease: false`, скачивание в фоне. Код — `native/updater/index.js`.
+Канал — подписанный `latest.yml`. Провайдер `custom` (`native/updater/provider.js`, `SignedUpdateProvider`) опрашивает два жёстко заданных источника: GitHub Releases и зеркало `mr01`. Принимается только `latest.yml` с верной подписью `latest.yml.sig` (ключи — `native/updater/update-keys.json`, проверка по сырым байтам до разбора YAML); побеждает наибольшая версия, при равенстве — GitHub. Нет ни одного подписанного источника — `ERR_UPDATER_NO_VERIFIED_SOURCE`, обновления нет (fail closed). `allowDowngrade = false`, `allowPrerelease: false`, скачивание в фоне. Код — `native/updater/index.js`.
+
+- **Порядок выкатки:** клиент с этим провайдером требует `latest.yml.sig`. Пайплайн релиза (подпись `latest.yml` через `scripts/sign-update.js`, загрузка `.sig` в релиз, публикация на зеркало) обязан быть смержен раньше любого тега, собранного с этим кодом; иначе такая сборка получит 404 на `.sig` и не сможет обновиться.
+
 
 - `electron-updater` — первая рантайм-зависимость `native/` (до этого у `native/` их не было), добавлена осознанно.
 - **Инсталлятор стартует строго после `supervisor.stop()`.** Прямой `quitAndInstall()` запрещён: он спавнит инсталлятор синхронно, а NSIS через ~2.6 с делает `taskkill /f`, пока дочерние `frankenphp`/`meilisearch`/`qbittorrent-nox` ещё держат файлы. «Перезапустить сейчас» = `stopApp()` → `autoUpdater.install(true, true)` → `app.exit(0)`; порядок закреплён тестом.

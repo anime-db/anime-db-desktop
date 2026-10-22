@@ -160,13 +160,27 @@ describe('release-build gate', () => {
         jest.useRealTimers();
     });
 
-    test('configures the github provider without prereleases and with background download', () => {
+    test('configures the signed custom provider without prereleases and with background download', () => {
+        const { SignedUpdateProvider } = require('../../native/updater/provider');
         const s = setup();
         s.updater.start();
-        expect(s.autoUpdater.setFeedURL).toHaveBeenCalledWith({ provider: 'github', owner: 'anime-db', repo: 'anime-db-desktop' });
+        expect(s.autoUpdater.setFeedURL).toHaveBeenCalledWith({ provider: 'custom', updateProvider: SignedUpdateProvider });
         expect(s.autoUpdater.allowPrerelease).toBe(false);
         expect(s.autoUpdater.autoDownload).toBe(true);
         expect(s.autoUpdater.logger).toBe(s.logger);
+        s.updater.stop();
+    });
+
+    test('allowDowngrade is false when updates are checked, and channel is never set', async () => {
+        const s = setup();
+        let seen;
+        s.autoUpdater.allowDowngrade = true;
+        s.autoUpdater.checkForUpdates = jest.fn(() => { seen = s.autoUpdater.allowDowngrade; return Promise.resolve(null); });
+        s.updater.start();
+        await tick();
+        expect(s.autoUpdater.checkForUpdates).toHaveBeenCalled();
+        expect(seen).toBe(false);
+        expect(s.autoUpdater.channel).toBeUndefined();
         s.updater.stop();
     });
 });

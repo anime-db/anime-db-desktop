@@ -174,7 +174,11 @@ function createUpdater({
         autoUpdater.allowPrerelease = false;
         autoUpdater.autoDownload = true;
         autoUpdater.autoInstallOnAppQuit = true;
-        autoUpdater.setFeedURL({ provider: 'github', owner: 'anime-db', repo: 'anime-db-desktop' });
+        // Явно: сеттер channel молча ставит true, а откат по подписанному старому latest.yml недопустим. channel не трогаем.
+        autoUpdater.allowDowngrade = false;
+        // Лениво: electron-updater подгружается только в релизной сборке.
+        const { SignedUpdateProvider } = require('./provider');
+        autoUpdater.setFeedURL({ provider: 'custom', updateProvider: SignedUpdateProvider });
         autoUpdater.on('update-downloaded', onDownloaded);
         autoUpdater.on('error', err => logger.error(err));
     }
