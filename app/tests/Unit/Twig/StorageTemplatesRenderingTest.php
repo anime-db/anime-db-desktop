@@ -142,33 +142,33 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
     {
         $html = $this->renderListWithLastScan(['running' => true]);
 
-        self::assertMatchesRegularExpression('#<a href="/storage/1/scan[^"]*" class="badge text-bg-info [^"]*">#', $html);
+        self::assertMatchesRegularExpression('#<a href="/storage/1/scan-progress" class="badge text-bg-info [^"]*">Scan in progress</a>#', $html);
     }
 
     #[DataProvider('failedScanBadgeProvider')]
-    public function testStorageListShowsFailedScanAsBadge(ScanRunStatus $status, string $color): void
+    public function testStorageListShowsFailedScanAsBadge(ScanRunStatus $status, string $color, string $label): void
     {
         $html = $this->renderListWithLastScan(['failedRun' => $this->scanRun($status)]);
 
-        self::assertMatchesRegularExpression('#<span class="badge '.$color.' text-wrap text-start">#', $html);
+        self::assertMatchesRegularExpression('#<span class="badge '.$color.' text-wrap text-start">'.preg_quote($label, '#').'</span>\s*1970-01-01 00:16#', $html);
         self::assertStringNotContainsString('text-danger-emphasis', $html);
     }
 
     /**
-     * @return iterable<string, array{ScanRunStatus, string}>
+     * @return iterable<string, array{ScanRunStatus, string, string}>
      */
     public static function failedScanBadgeProvider(): iterable
     {
-        yield 'failed' => [ScanRunStatus::Failed, 'text-bg-danger'];
-        yield 'marker_conflict' => [ScanRunStatus::MarkerConflict, 'text-bg-danger'];
-        yield 'interrupted' => [ScanRunStatus::Interrupted, 'text-bg-secondary'];
+        yield 'failed' => [ScanRunStatus::Failed, 'text-bg-danger', 'Failed'];
+        yield 'marker_conflict' => [ScanRunStatus::MarkerConflict, 'text-bg-danger', 'Folder is connected as another storage'];
+        yield 'interrupted' => [ScanRunStatus::Interrupted, 'text-bg-secondary', 'Interrupted'];
     }
 
     public function testStorageListShowsNeedsDecisionAsWarningBadge(): void
     {
         $html = $this->renderListWithLastScan(['run' => $this->scanRun(ScanRunStatus::Done), 'needsDecision' => 2]);
 
-        self::assertMatchesRegularExpression('#<span class="badge text-bg-warning text-wrap text-start">#', $html);
+        self::assertMatchesRegularExpression('#<span class="badge text-bg-warning text-wrap text-start">Needs a decision: 2</span>#', $html);
         self::assertStringNotContainsString('text-warning-emphasis', $html);
     }
 
