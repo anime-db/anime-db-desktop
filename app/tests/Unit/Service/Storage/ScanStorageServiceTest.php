@@ -225,6 +225,24 @@ final class ScanStorageServiceTest extends TestCase
         $this->assertSame((string) $owner->id, $sections['AnimeDB']['id']);
     }
 
+    public function testStorageWithForeignDesktopIniIsScannedNotSkippedAsConflict(): void
+    {
+        $dir = $this->makeStorageDir();
+        $this->touchFile($dir.'/New.mkv');
+        $content = "[LocalizedFileNames]\r\nFoo (1).lnk=@%SystemRoot%\\system32\\shell32.dll,-21770\r\n";
+        file_put_contents($dir.'/desktop.ini', $content);
+
+        $storage = new Storage('Target', $dir, StorageType::Folder);
+        $this->entityManager->persist($storage);
+        $this->entityManager->flush();
+
+        $result = $this->newService()->scan($storage);
+
+        $this->assertFalse($result->conflicted);
+        $this->assertCount(1, $result->items);
+        $this->assertSame($content, file_get_contents($dir.'/desktop.ini'));
+    }
+
     public function testRelocatesStorageWhenScannedAtPathWhereItsOwnMarkerHasMoved(): void
     {
         $oldDir = $this->makeStorageDir();
