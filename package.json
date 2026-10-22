@@ -102,6 +102,7 @@
         }
     },
     "dependencies": {
-        "electron-updater": "^6.8.9"
+        "electron-updater": "^6.8.9",
+        "semver": "~7.7.3"
     }
 }
