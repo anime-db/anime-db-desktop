@@ -78,8 +78,11 @@ function parseCreds(raw) {
         if (entry.protocol !== undefined && !['ftp', 'ftps'].includes(entry.protocol)) {
             throw new InputError(`MIRROR_CREDS[${id}].protocol must be ftp or ftps`);
         }
-        if (entry.port !== undefined && !Number.isInteger(Number(entry.port))) {
-            throw new InputError(`MIRROR_CREDS[${id}].port must be an integer`);
+        if (/[\r\n]/.test(entry.user + entry.password)) {
+            throw new InputError(`MIRROR_CREDS[${id}] user and password must not contain line breaks`);
+        }
+        if (entry.port !== undefined && !(/^[0-9]+$/.test(String(entry.port)) && entry.port !== true && Number(entry.port) > 0 && Number(entry.port) < 65536)) {
+            throw new InputError(`MIRROR_CREDS[${id}].port must be an integer from 1 to 65535`);
         }
     }
     return creds;

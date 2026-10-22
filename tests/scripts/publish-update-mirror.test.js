@@ -186,4 +186,15 @@ describe('publish-update-mirror.js', () => {
         expect(ftpUrl(creds.a, '1.2.3/x y.exe')).toBe('ftps://ftp.a.test:2121/app/1.2.3/x%20y.exe');
         expect(() => parseCreds(JSON.stringify({ a: { ...mirror('a'), protocol: 'http' } }))).toThrow('protocol');
     });
+
+    test('parseCreds rejects line breaks in credentials and a malformed port', () => {
+        const parse = (patch) => () => parseCreds(JSON.stringify({ a: { ...mirror('a'), ...patch } }));
+
+        expect(parse({ password: 'p\nurl = "x"' })).toThrow('line breaks');
+        expect(parse({ user: 'u\r' })).toThrow('line breaks');
+        for (const port of ['', ' ', true, null, -1, 0, 65536, 1.5, 'abc']) {
+            expect(parse({ port })).toThrow('port');
+        }
+        expect(parse({ port: '2121' })()).toBeDefined();
+    });
 });

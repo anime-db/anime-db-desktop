@@ -211,11 +211,19 @@ function checkUpdateKeys(appDir) {
     if (!Array.isArray(keys) || keys.length === 0) {
         return ['update-keys.json in the packaged app is not a non-empty array: no signed update would be accepted'];
     }
+    // The gate must accept exactly what the client accepts, so it reuses the client's own parser.
+    let parseKeys;
+    try {
+        ({ parseKeys } = require(path.join(appDir, 'native', 'updater', 'signature.js')));
+    } catch (e) {
+        return [`signature.js cannot be loaded from the packaged app: ${e.message}`];
+    }
     const problems = [];
     keys.forEach((key, index) => {
-        const bytes = typeof key === 'string' && /^[A-Za-z0-9+/]+={0,2}$/.test(key) ? Buffer.from(key, 'base64').length : null;
-        if (bytes !== 32) {
-            problems.push(`update-keys.json key #${index} is not a base64 32-byte Ed25519 key (decoded: ${bytes === null ? 'not base64' : `${bytes} bytes`})`);
+        try {
+            parseKeys([key]);
+        } catch (e) {
+            problems.push(`update-keys.json key #${index} is not a base64 32-byte Ed25519 key (${e.message.replace(/^key #0/, 'key')})`);
         }
     });
     return problems;

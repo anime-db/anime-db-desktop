@@ -218,6 +218,26 @@ describe('check-update-verifier.js', () => {
         expect(script('check-update-verifier.js', [module, tmp]).code).toBe(1);
     });
 
+    describe('with a broken key file next to a copy of the module', () => {
+        function withKeys(list) {
+            fs.copyFileSync(module, path.join(tmp, 'signature.js'));
+            fs.writeFileSync(path.join(tmp, 'update-keys.json'), JSON.stringify(list.map((k) => k.toString('base64'))));
+            return script('check-update-verifier.js', [path.join(tmp, 'signature.js')]).code;
+        }
+
+        test('fails without a backup key', () => {
+            expect(withKeys([keys[0]])).toBe(1);
+        });
+
+        test('fails when the keys are swapped', () => {
+            expect(withKeys([keys[1], keys[0]])).toBe(1);
+        });
+
+        test('passes with the right order (control)', () => {
+            expect(withKeys([keys[0], keys[1]])).toBe(0);
+        });
+    });
+
     test('fails when the module cannot be loaded', () => {
         expect(script('check-update-verifier.js', [path.join(tmp, 'missing.js')]).code).toBe(1);
     });
@@ -227,6 +247,7 @@ describe('checkUpdateKeys', () => {
     function app(content) {
         const dir = path.join(tmp, 'native', 'updater');
         fs.mkdirSync(dir, { recursive: true });
+        fs.copyFileSync(path.join(root, 'native', 'updater', 'signature.js'), path.join(dir, 'signature.js'));
         if (content !== null) {
             fs.writeFileSync(path.join(dir, 'update-keys.json'), content);
         }
@@ -248,5 +269,11 @@ describe('checkUpdateKeys', () => {
 
         expect(problems).toHaveLength(2);
         expect(problems[0]).toContain('key #1');
+    });
+
+    test('rejects an unpadded key that the client would refuse', () => {
+        const unpadded = keys[0].toString('base64').replace(/=+$/, '');
+        expect(unpadded.length % 4).not.toBe(0);
+        expect(checkUpdateKeys(app(JSON.stringify([unpadded])))).toHaveLength(1);
     });
 });
