@@ -39,6 +39,8 @@ const {
     downloadBin,
     downloadQbittorrentNox,
     downloadFfprobe,
+    parseOnly,
+    BINS,
     QBITTORRENT_NOX,
     QBITTORRENT_NOX_PUBLIC_KEY,
     FFPROBE,
@@ -109,6 +111,25 @@ function buildZip(entries) {
 
     return Buffer.concat([...localParts, centralDir, eocd]);
 }
+
+describe('parseOnly (--only)', () => {
+    test('returns null without the flag so everything is downloaded', () => {
+        expect(parseOnly([])).toBeNull();
+    });
+
+    test('parses a comma-separated list in both spellings', () => {
+        expect(parseOnly(['--only', 'meilisearch,ffprobe'])).toEqual(['meilisearch', 'ffprobe']);
+        expect(parseOnly(['--only=qbittorrent-nox'])).toEqual(['qbittorrent-nox']);
+    });
+
+    test('rejects an unknown name and lists the allowed ones', () => {
+        expect(() => parseOnly(['--only', 'meilisearch,nope'])).toThrow(/"nope".*frankenphp, meilisearch, qbittorrent-nox, ffprobe/);
+    });
+
+    test('keeps the BINS export shape used by runtime-parity.yml', () => {
+        expect(BINS.map((bin) => bin.name)).toEqual(['frankenphp', 'meilisearch']);
+    });
+});
 
 describe('parseSha256Sums', () => {
     const sums = [
@@ -284,20 +305,31 @@ describe('downloadQbittorrentNox (verify-before-extract orchestration)', () => {
         jest.restoreAllMocks();
     });
 
-    test('aborts before extracting anything when the SHA-256 checksum does not match', async () => {
+    test('aborts before extracting anything when the SHA-256 does not match versions.json', async () => {
         const zip = buildZip([{ name: 'qbittorrent-nox.exe', data: Buffer.from('tampered-bundle') }]);
-        const sums = Buffer.from(
-            `${'f'.repeat(64)}  ${bin.zipName}\n`,
-        );
+        const hash = crypto.createHash('sha256').update(zip).digest('hex');
+        bin.sha256 = 'f'.repeat(64);
+        const sums = Buffer.from(`${hash}  ${bin.zipName}\n`);
         mockDownloads({ zip, sums, sig: Buffer.from('irrelevant-signature') });
 
-        await expect(downloadQbittorrentNox(bin)).rejects.toThrow(/SHA-256 mismatch/);
+        await expect(downloadQbittorrentNox(bin)).rejects.toThrow(/SHA-256 mismatch.*versions\.json/);
+        expect(fs.existsSync(bin.destDir)).toBe(false);
+    });
+
+    test('aborts before extracting anything when the SHA-256 does not match SHA256SUMS', async () => {
+        const zip = buildZip([{ name: 'qbittorrent-nox.exe', data: Buffer.from('real-bundle') }]);
+        bin.sha256 = crypto.createHash('sha256').update(zip).digest('hex');
+        const sums = Buffer.from(`${'f'.repeat(64)}  ${bin.zipName}\n`);
+        mockDownloads({ zip, sums, sig: Buffer.from('irrelevant-signature') });
+
+        await expect(downloadQbittorrentNox(bin)).rejects.toThrow(/SHA-256 mismatch.*SHA256SUMS/);
         expect(fs.existsSync(bin.destDir)).toBe(false);
     });
 
     test('aborts before extracting anything when the Ed25519 signature is invalid', async () => {
         const zip = buildZip([{ name: 'qbittorrent-nox.exe', data: Buffer.from('real-bundle') }]);
         const hash = crypto.createHash('sha256').update(zip).digest('hex');
+        bin.sha256 = hash;
         const sums = Buffer.from(`${hash}  ${bin.zipName}\n`);
         mockDownloads({ zip, sums, sig: Buffer.from('some-signature') });
         jest.spyOn(crypto, 'verify').mockReturnValueOnce(false);
@@ -306,9 +338,10 @@ describe('downloadQbittorrentNox (verify-before-extract orchestration)', () => {
         expect(fs.existsSync(bin.destDir)).toBe(false);
     });
 
-    test('extracts the bundle and writes the version file once both checks pass', async () => {
+    test('extracts the bundle and writes the version file once every check passes', async () => {
         const zip = buildZip([{ name: 'qbittorrent-nox.exe', data: Buffer.from('real-bundle') }]);
         const hash = crypto.createHash('sha256').update(zip).digest('hex');
+        bin.sha256 = hash;
         const sums = Buffer.from(`${hash}  ${bin.zipName}\n`);
         mockDownloads({ zip, sums, sig: Buffer.from('a-matching-signature') });
         jest.spyOn(crypto, 'verify').mockReturnValueOnce(true);
@@ -317,6 +350,18 @@ describe('downloadQbittorrentNox (verify-before-extract orchestration)', () => {
 
         expect(fs.readFileSync(bin.dest, 'utf8')).toBe('real-bundle');
         expect(fs.readFileSync(path.join(bin.destDir, '.version'), 'utf8')).toBe(`${bin.version}\n`);
+    });
+
+    test('throws a "missing pin" error naming the real versions.json key instead of downloading', async () => {
+        bin.sha256 = null;
+
+        await expect(downloadQbittorrentNox(bin)).rejects.toThrow(/versions\.sha256\.qbittorrentNox/);
+        expect(https.get).not.toHaveBeenCalled();
+        expect(fs.existsSync(bin.destDir)).toBe(false);
+    });
+
+    test('ships a pinned SHA-256 in versions.json', () => {
+        expect(QBITTORRENT_NOX.sha256).toMatch(/^[0-9a-f]{64}$/);
     });
 });
 
