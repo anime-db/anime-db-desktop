@@ -90,6 +90,8 @@ final class ExplorerOpenController
         }
 
         if ($location->kind === StorageLocationKind::Outside) {
+            // The shell only offers this action for folders and drives, so the selected path itself is the folder to
+            // suggest; $location->suggestedStoragePath (the parent) is for the manual link flow, which selects items.
             return $this->redirectTo('storage_new', ['path' => $selectedPath]);
         }
 
