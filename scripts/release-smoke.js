@@ -572,6 +572,8 @@ const REQUIRED_LICENSE_FILES = [
     'THIRD-PARTY-LICENSES/SQLite-NOTICE.txt',
     'THIRD-PARTY-LICENSES/texts/Apache-2.0.txt',
     'THIRD-PARTY-LICENSES/texts/AGPL-3.0.txt',
+    'THIRD-PARTY-LICENSES/texts/LGPL-3.0.txt',
+    'resources/app/app/resources/storage-icons/README.md',
     'resources/app/bin/licenses/frankenphp/license.txt',
     'resources/app/bin/licenses/frankenphp/readme-redist-bins.txt',
     'resources/app/bin/qbittorrent-nox/THIRD-PARTY-LICENSES/README.md',
