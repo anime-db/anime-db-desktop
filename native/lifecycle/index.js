@@ -386,6 +386,12 @@ if (!gotLock) {
 
             supervisor.events.on('exit', () => tray.setState('error'));
 
+            // performReload() drops the backend port for the duration of a restart; a path
+            // requested in that window waits in explorerNav until the port is back (on success
+            // and after a rollback alike — with no port the retry is a no-op).
+            supervisor.events.on('plugin-activated', () => explorerNav.backendReady());
+            supervisor.events.on('plugin-activation-failed', () => explorerNav.backendReady());
+
             // Both the isolated warm-up (#222) and the reconcile step it runs after already
             // validated the plugin on disk — a failure here is specifically the live restart not
             // coming back healthy, which performReload() has already rolled back from by the time

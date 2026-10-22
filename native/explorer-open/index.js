@@ -91,6 +91,10 @@ function createExplorerOpen({ getPort, getWindow }) {
             ready = true;
             flush();
         },
+        /** Call when the backend is listening again after a restart: retries a postponed path. */
+        backendReady() {
+            flush();
+        },
     };
 }
 

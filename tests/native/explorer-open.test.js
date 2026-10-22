@@ -85,15 +85,31 @@ describe('createExplorerOpen', () => {
         expect(win.loadURL.mock.calls[0][1]).toEqual({ extraHeaders: SHELL_EXTRA_HEADERS });
     });
 
-    test('nothing is navigated while the backend is down, and a path is opened once', () => {
+    test('a path requested while the backend is down is opened once the backend is back', () => {
         const { state, win, nav } = setup(null);
         nav.markReady();
         nav.request('C:\\a');
         expect(win.loadURL).not.toHaveBeenCalled();
 
         state.port = 8000;
-        nav.request('C:\\b');
+        nav.backendReady();
+        expect(win.loadURL).toHaveBeenCalledTimes(1);
+        expect(win.loadURL).toHaveBeenCalledWith(buildExplorerOpenUrl(8000, 'C:\\a'), { extraHeaders: SHELL_EXTRA_HEADERS });
+
+        nav.backendReady();
         nav.markReady();
         expect(win.loadURL).toHaveBeenCalledTimes(1);
+    });
+
+    test('the latest path wins when several are requested while the backend is down', () => {
+        const { state, win, nav } = setup(null);
+        nav.markReady();
+        nav.request('C:\\a');
+        nav.request('C:\\b');
+
+        state.port = 8000;
+        nav.backendReady();
+        expect(win.loadURL).toHaveBeenCalledTimes(1);
+        expect(win.loadURL).toHaveBeenCalledWith(buildExplorerOpenUrl(8000, 'C:\\b'), { extraHeaders: SHELL_EXTRA_HEADERS });
     });
 });
