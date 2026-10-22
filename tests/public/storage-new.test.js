@@ -42,6 +42,7 @@ function setUpDom(writableTypes = 'local') {
                 <option value="local">local</option>
                 <option value="remote">remote</option>
             </select>
+            <input type="text" id="storage-new-name" value="">
             <input type="text" id="storage-new-path" value="">
             <button type="button" id="storage-new-pick-folder" hidden></button>
         </form>
@@ -67,7 +68,18 @@ beforeEach(() => {
 
 afterEach(() => {
     delete window.animeDb;
+    delete global.fetch;
 });
+
+function hintResponse(name) {
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ name }) });
+}
+
+function typePath(value) {
+    const path = document.getElementById('storage-new-path');
+    path.value = value;
+    path.dispatchEvent(new Event('change'));
+}
 
 test('inside Electron, the pick-folder button is shown for the writable type and clicking it fills the path field', async () => {
     setUpDom('local');
@@ -159,4 +171,89 @@ test('a not-applicable type disables and clears the path field, returning restor
     expect(path.disabled).toBe(false);
     expect(path.value).toBe('/media/anime');
     expect(hint.hidden).toBe(true);
+});
+
+describe('name hint', () => {
+    const nameField = () => document.getElementById('storage-new-name');
+
+    test('picking a folder requests the hint with the shell header and fills the empty name', async () => {
+        setUpDom('local');
+        window.animeDb = { pickFolder: jest.fn(() => Promise.resolve('D:\\')) };
+        global.fetch = jest.fn(() => hintResponse('Backup'));
+        loadStorageNewModule();
+
+        document.getElementById('storage-new-pick-folder').click();
+        await flushMicrotasks();
+
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        expect(global.fetch.mock.calls[0][0]).toBe('/storage/new/name-hint?path=' + encodeURIComponent('D:\\'));
+        expect(global.fetch.mock.calls[0][1].headers['X-AnimeDB-Shell']).toBe('1');
+        expect(nameField().value).toBe('Backup');
+    });
+
+    test('a manual change of the path requests the hint', async () => {
+        setUpDom('local');
+        global.fetch = jest.fn(() => hintResponse('anime'));
+        loadStorageNewModule();
+
+        typePath('/media/anime');
+        await flushMicrotasks();
+
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        expect(nameField().value).toBe('anime');
+    });
+
+    test('only the answer to the last request is applied', async () => {
+        setUpDom('local');
+        const resolvers = [];
+        global.fetch = jest.fn(() => new Promise((resolve) => resolvers.push(resolve)));
+        loadStorageNewModule();
+
+        typePath('/first');
+        typePath('/second');
+        resolvers[1]({ ok: true, json: () => Promise.resolve({ name: 'second' }) });
+        await flushMicrotasks();
+        resolvers[0]({ ok: true, json: () => Promise.resolve({ name: 'first' }) });
+        await flushMicrotasks();
+
+        expect(nameField().value).toBe('second');
+    });
+
+    test('a name typed by a person is never overwritten', async () => {
+        setUpDom('local');
+        global.fetch = jest.fn(() => hintResponse('anime'));
+        loadStorageNewModule();
+        nameField().value = 'My own';
+
+        typePath('/media/anime');
+        await flushMicrotasks();
+
+        expect(nameField().value).toBe('My own');
+    });
+
+    test('the previous hint is replaced, and cleared when the new answer is null', async () => {
+        setUpDom('local');
+        const answers = ['one', 'two', null];
+        global.fetch = jest.fn(() => hintResponse(answers.shift()));
+        loadStorageNewModule();
+
+        for (const expected of ['one', 'two', '']) {
+            typePath('/p');
+            await flushMicrotasks();
+            expect(nameField().value).toBe(expected);
+        }
+    });
+
+    test('the server-rendered hint from the data attribute is replaced on a path change', async () => {
+        setUpDom('local');
+        nameField().value = 'Rendered';
+        nameField().dataset.nameHint = 'Rendered';
+        global.fetch = jest.fn(() => hintResponse('Other'));
+        loadStorageNewModule();
+
+        typePath('/other');
+        await flushMicrotasks();
+
+        expect(nameField().value).toBe('Other');
+    });
 });

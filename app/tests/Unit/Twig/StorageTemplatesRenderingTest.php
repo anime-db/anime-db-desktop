@@ -181,6 +181,7 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('storage/new.html.twig', [
             'name' => '',
+            'name_hint' => null,
             'path' => '',
             'type' => null,
             'error' => null,
@@ -360,6 +361,7 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
         $twig = self::getContainer()->get('twig');
         $html = $twig->render('storage/new.html.twig', [
             'name' => 'AnimeDB',
+            'name_hint' => null,
             'path' => '/some/path',
             'type' => $type,
             'error' => null,

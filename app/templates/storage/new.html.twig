@@ -40,7 +40,7 @@
 
             <div class="mb-3">
                 <label for="storage-new-name" class="form-label">{{ 'storage_new.field_name'|trans }}</label>
-                <input type="text" id="storage-new-name" name="name" value="{{ name }}" required class="form-control">
+                <input type="text" id="storage-new-name" name="name" value="{{ name }}"{% if name_hint is not null %} data-name-hint="{{ name_hint }}"{% endif %} required class="form-control">
             </div>
 
             <div class="mb-3">

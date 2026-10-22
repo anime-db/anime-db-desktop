@@ -66,6 +66,52 @@
             pathInput.required = !pathOptionalTypes.includes(typeSelect.value);
         }
 
+        // Name hint (the endpoint reads a drive label, so it answers only a request with the shell header).
+        const nameInput = form.querySelector('#storage-new-name');
+        const hintUrl = '/storage/new/name-hint';
+        // The hint last put into the name field (rendered by the server on a prefilled form);
+        // a name that differs from it was typed by a person and is never touched.
+        let lastHint = nameInput ? nameInput.dataset.nameHint || null : null;
+        let hintRequestId = 0;
+
+        function applyHint(name) {
+            if (nameInput.value !== '' && nameInput.value !== lastHint) {
+                return;
+            }
+            nameInput.value = name || '';
+            lastHint = name || null;
+        }
+
+        async function requestNameHint() {
+            if (!nameInput || typeof fetch !== 'function') {
+                return;
+            }
+
+            // Only the answer to the latest request is applied: a slow reply to an earlier path must not win.
+            hintRequestId += 1;
+            const requestId = hintRequestId;
+            const path = pathInput.value.trim();
+            let name = null;
+            if (path !== '') {
+                try {
+                    const response = await fetch(hintUrl + '?path=' + encodeURIComponent(path), {
+                        headers: { 'X-AnimeDB-Shell': '1' },
+                    });
+                    if (!response.ok) {
+                        return;
+                    }
+                    name = (await response.json()).name || null;
+                } catch {
+                    return;
+                }
+            }
+            if (requestId === hintRequestId) {
+                applyHint(name);
+            }
+        }
+
+        pathInput.addEventListener('change', requestNameHint);
+
         typeSelect.addEventListener('change', updatePickButtonVisibility);
         typeSelect.addEventListener('change', updatePathRequired);
         typeSelect.addEventListener('change', updatePathApplicable);
@@ -81,6 +127,8 @@
             const folder = await window.animeDb.pickFolder();
             if (folder) {
                 pathInput.value = folder;
+                // Assigning the value does not fire `change`, so the hint is requested explicitly.
+                requestNameHint();
             }
         });
     }

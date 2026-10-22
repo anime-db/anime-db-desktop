@@ -30,7 +30,11 @@ namespace App\Tests\Unit\Controller;
 use App\Controller\StorageNewController;
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
+use App\Service\Storage\AutorunInfReader;
 use App\Service\Storage\StorageMarkerService;
+use App\Service\Storage\StorageNameHinter;
+use App\Service\Storage\VolumeInfo;
+use App\Service\Storage\VolumeProbeInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -73,6 +77,7 @@ final class StorageNewControllerTest extends TestCase
         ?CsrfTokenManagerInterface $csrfTokenManager = null,
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
+        ?VolumeProbeInterface $volumeProbe = null,
     ): StorageNewController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -96,7 +101,14 @@ final class StorageNewControllerTest extends TestCase
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
+            new StorageNameHinter(new AutorunInfReader(), $volumeProbe ?? $this->createStub(VolumeProbeInterface::class), $this->nonexistentDriveRootFormat()),
         );
+    }
+
+    /** Drive roots resolve to a directory that does not exist, so no autorun.inf is ever found. */
+    private function nonexistentDriveRootFormat(): string
+    {
+        return sys_get_temp_dir().'/no-such-drive-%s/';
     }
 
     /** @return EntityManagerInterface&\PHPUnit\Framework\MockObject\MockObject */
@@ -137,6 +149,72 @@ final class StorageNewControllerTest extends TestCase
         $response = $this->createController(twig: $twig)->new(new Request());
 
         $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testNewPrefillsNameHintAndMarksTheField(): void
+    {
+        $probe = $this->createStub(VolumeProbeInterface::class);
+        $probe->method('probe')->willReturn(new VolumeInfo('Backup'));
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['name'] === 'Backup' && $params['name_hint'] === 'Backup' && $params['path'] === 'D:\\',
+            ))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig, volumeProbe: $probe)->new(Request::create('/storage/new', 'GET', ['path' => 'D:\\']));
+    }
+
+    public function testNewWithoutPathLeavesNameEmpty(): void
+    {
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['name'] === '' && $params['name_hint'] === null,
+            ))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig)->new(new Request());
+    }
+
+    /** @return array<string, array{array<string, string>, string}> */
+    public static function rejectedHintRequests(): array
+    {
+        return [
+            'no shell header' => [['HTTP_HOST' => '127.0.0.1'], 'D:\\'],
+            'foreign host' => [['HTTP_HOST' => 'evil.example', 'HTTP_X_ANIMEDB_SHELL' => '1'], 'D:\\'],
+        ];
+    }
+
+    /** @param array<string, string> $server */
+    #[\PHPUnit\Framework\Attributes\DataProvider('rejectedHintRequests')]
+    public function testNameHintIsForbiddenBeforeAnyProbe(array $server, string $path): void
+    {
+        $probe = $this->createMock(VolumeProbeInterface::class);
+        $probe->expects($this->never())->method('probe');
+
+        $response = $this->createController(volumeProbe: $probe)
+            ->nameHint(Request::create('/storage/new/name-hint', 'GET', ['path' => $path], server: $server));
+
+        $this->assertSame(403, $response->getStatusCode());
+    }
+
+    public function testNameHintAnswersJsonForDriveRootAndSkipsProbeForFoldersAndShares(): void
+    {
+        $server = ['HTTP_HOST' => '127.0.0.1', 'HTTP_X_ANIMEDB_SHELL' => '1'];
+        $probe = $this->createMock(VolumeProbeInterface::class);
+        $probe->expects($this->once())->method('probe')->with('D')->willReturn(new VolumeInfo('Backup'));
+        $controller = $this->createController(volumeProbe: $probe);
+
+        $hint = static fn (string $path): string => (string) $controller
+            ->nameHint(Request::create('/storage/new/name-hint', 'GET', ['path' => $path], server: $server))
+            ->getContent();
+
+        $this->assertSame('{"name":"Backup"}', $hint('D:\\'));
+        $this->assertSame('{"name":"share"}', $hint('\\\\srv\\share'));
+        $this->assertSame('{"name":"Series"}', $hint('D:\\Anime\\Series'));
     }
 
     public function testCreatePersistsStorageAndWritesMarkerForWritableType(): void
