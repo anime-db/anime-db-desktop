@@ -222,6 +222,9 @@ const explorerNav = explorerOpen.createExplorerOpen({
     getPort:   () => supervisor.getFrankenphpPort(),
     getWindow: () => mainWindow,
 });
+// Before 'second-instance' can fire: a click made during the splash must not be overwritten by
+// the launch path later on.
+explorerNav.request(launchPath);
 
 if (!gotLock) {
     // Уже запущен другой экземпляр — этот выходит немедленно, не трогая его дочерние процессы.
@@ -329,7 +332,6 @@ if (!gotLock) {
             mainWindow = createWindow(frankenphpPort);
 
             mainWindow.webContents.once('did-finish-load', () => explorerNav.markReady());
-            explorerNav.request(launchPath);
 
             mainWindow.on('close', (e) => {
                 if (!quitting) {

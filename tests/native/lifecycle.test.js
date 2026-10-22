@@ -113,6 +113,8 @@ function loadLifecycle() {
     const processHandlers = {};
     const wsClientHandlers = {};
     const supervisorEventHandlers = {};
+    const supervisorEventListeners = {};
+    const emitSupervisorEvent = (event, payload) => (supervisorEventListeners[event] || []).forEach(h => h(payload));
 
     jest.spyOn(process, 'on').mockImplementation((event, handler) => {
         processHandlers[event] = handler;
@@ -123,7 +125,10 @@ function loadLifecycle() {
     app.on.mockImplementation((event, handler) => { appHandlers[event] = handler; });
 
     const supervisor   = require('../../native/supervisor');
-    supervisor.events.on.mockImplementation((event, handler) => { supervisorEventHandlers[event] = handler; });
+    supervisor.events.on.mockImplementation((event, handler) => {
+        supervisorEventHandlers[event] = handler;
+        (supervisorEventListeners[event] = supervisorEventListeners[event] || []).push(handler);
+    });
     const migrations   = require('../../native/supervisor/migrations');
     const cacheInvalidation = require('../../native/supervisor/cache-invalidation');
     const safeModeState = require('../../native/supervisor/safe-mode');
@@ -163,7 +168,7 @@ function loadLifecycle() {
 
     return {
         app, dialog, supervisor, migrations, cacheInvalidation, safeModeState, createWindow, createSplash, tray,
-        wsClient, proxy, firewall, theme, appHandlers, processHandlers, wsClientHandlers, supervisorEventHandlers,
+        wsClient, proxy, firewall, theme, appHandlers, processHandlers, wsClientHandlers, supervisorEventHandlers, emitSupervisorEvent,
         fakeWindow, fakeSplash, relaunch: lifecycle.relaunch,
     };
 }
@@ -197,6 +202,44 @@ describe('Explorer launch (issue #1122)', () => {
 
         expect(fakeWindow.loadURL).toHaveBeenCalledWith(
             'http://127.0.0.1:9001/explorer/open?path=C%3A%5CVideo',
+            { extraHeaders: 'X-AnimeDB-Shell: 1\n' },
+        );
+    });
+
+    test('a click during the splash is not overwritten by the launch path', async () => {
+        const argv = process.argv;
+        process.argv = ['AnimeDB.exe', '--explorer-open=C:\\A'];
+        try {
+            const { appHandlers, fakeWindow, supervisor } = loadLifecycle();
+            supervisor.getFrankenphpPort.mockReturnValue(9001);
+            appHandlers['second-instance']({}, [], '/', { explorerOpen: 'C:\\B' });
+            await new Promise((r) => setTimeout(r, 500));
+
+            const onLoad = fakeWindow.webContents.once.mock.calls.find(c => c[0] === 'did-finish-load')[1];
+            onLoad();
+
+            expect(fakeWindow.loadURL).toHaveBeenCalledTimes(1);
+            expect(fakeWindow.loadURL.mock.calls[0][0]).toBe('http://127.0.0.1:9001/explorer/open?path=C%3A%5CB');
+        } finally {
+            process.argv = argv;
+        }
+    });
+
+    test.each(['plugin-activated', 'plugin-activation-failed'])('a path postponed without a port opens after %s', async (event) => {
+        const { appHandlers, fakeWindow, supervisor, emitSupervisorEvent } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        const onLoad = fakeWindow.webContents.once.mock.calls.find(c => c[0] === 'did-finish-load')[1];
+        onLoad();
+
+        supervisor.getFrankenphpPort.mockReturnValue(null);
+        appHandlers['second-instance']({}, [], '/', { explorerOpen: 'C:\\Video' });
+        expect(fakeWindow.loadURL).not.toHaveBeenCalled();
+
+        supervisor.getFrankenphpPort.mockReturnValue(9002);
+        emitSupervisorEvent(event, { pluginId: 'p' });
+
+        expect(fakeWindow.loadURL).toHaveBeenCalledWith(
+            'http://127.0.0.1:9002/explorer/open?path=C%3A%5CVideo',
             { extraHeaders: 'X-AnimeDB-Shell: 1\n' },
         );
     });
