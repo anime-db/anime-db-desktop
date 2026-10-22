@@ -18,6 +18,7 @@ anime-db-desktop/
 │   │   ├── port.js         # поиск свободного порта (общий для обоих)
 │   │   └── healthcheck.js  # HTTP-пинг /health (общий для обоих)
 │   ├── window/index.js     # BrowserWindow, loadURL(localhost:port)
+│   ├── explorer-open/index.js  # разбор --explorer-open=, навигация на /explorer/open с X-AnimeDB-Shell
 │   ├── tray/index.js       # иконка трея, контекстное меню
 │   └── lifecycle/index.js  # дирижёр: ready → supervisor → window; quit → stop
 ├── app/            # Symfony 8.1: бизнес-логика, HTTP, шаблоны, сущности, плагины
@@ -267,5 +268,18 @@ read-only, `#[AutoconfigureTag]` там не повесить), а `EntryWidgetR
 `anime_show`, `anime_new` или `storage_edit?path=` (маркер найден не там, где корень в БД). Поиск хранилища
 (подъём по маркерам, затем самый длинный корень-префикс, валидация пути) живёт в одном месте —
 `StorageLocator`, им же пользуется `ManualLinkService`. Маршрут отвечает только на запрос с заголовком
-`X-AnimeDB-Shell: 1` (native-часть, которая его ставит, ещё не сделана и пойдёт отдельной задачей — до неё из оболочки маршрут отвечает 403), иначе 403 — **до** любого
+`X-AnimeDB-Shell: 1` (его ставит окно приложения при навигации из `native/explorer-open/`, #1122), иначе 403 — **до** любого
 обращения к ФС, и только при `Host` = `127.0.0.1`/`localhost` (защита от DNS rebinding; то же задаёт `framework.trusted_hosts`): чтение маркера или проверка UNC-пути `\\host\x` отправляет NTLM-хэш на чужой хост.
+
+### Нативная часть (#1122)
+
+- `build/installer.nsh`: ключи `Software\Classes\Directory\shell\AnimeDB`, `Directory\Background\shell\AnimeDB`
+  и `Drive\shell\AnimeDB` пишутся в `SHCTX`; перед записью те же ключи чистятся в `HKCU`. Команда —
+  `"<exe>" --explorer-open="%V"`, подпись — `LangString AnimedbExplorerVerb`, иконка — `tray-idle.ico` из
+  `$INSTDIR\resources\app\resources\` (путь рабочий благодаря `asar: false`). Ключи удаляются только при удалении
+  программы, не при обновлении (`${ifNot} ${isUpdated}`).
+- `native/explorer-open/index.js`: `parseExplorerOpenArg` разбирает `--explorer-open=` (корень диска `D:"`
+  превращается в `D:\`). Окно переходит на `/explorer/open?path=` с заголовком `X-AnimeDB-Shell: 1` по текущему
+  порту FrankenPHP; навигация откладывается до готовности окна и бэкенда.
+- `native/lifecycle/index.js`: путь второго экземпляра приходит через `requestSingleInstanceLock(additionalData)`
+  и событие `second-instance`.
