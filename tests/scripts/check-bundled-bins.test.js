@@ -25,7 +25,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { run, LAUNCH_TIMEOUT_MS } = require('../../scripts/check-bundled-bins');
+const { run, parseArgs, BundledBinsError, LAUNCH_TIMEOUT_MS } = require('../../scripts/check-bundled-bins');
 
 const VERSIONS = { meilisearch: '1.13.0', qbittorrentNox: '5.2.3_2', ffprobe: '9.0.2_1' };
 const NAMES = ['meilisearch', 'qbittorrent-nox', 'ffprobe'];
@@ -247,5 +247,57 @@ describe('check-bundled-bins', () => {
         writeSnapshot();
 
         expect(run(opts({ platform: 'linux', noLaunch: true })).ok).toBe(true);
+    });
+
+    test('a profile cleanup failure (EBUSY) does not change the result', () => {
+        writeSnapshot();
+        const realRmSync = fs.rmSync;
+        const spy = jest.spyOn(fs, 'rmSync').mockImplementation((target, options) => {
+            if (String(target).includes('qbt-profile-')) {
+                throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' });
+            }
+            return realRmSync(target, options);
+        });
+        try {
+            const result = run(opts());
+
+            expect(result).toMatchObject({ ok: true, exitCode: 0 });
+            expect(spy).toHaveBeenCalledWith(expect.stringContaining('qbt-profile-'), expect.objectContaining({ maxRetries: 3 }));
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    test('parseArgs rejects an unknown argument listing the valid flags', () => {
+        expect(() => parseArgs(['--wirte'])).toThrow(BundledBinsError);
+        expect(() => parseArgs(['--wirte'])).toThrow(/--wirte.*--write, --no-launch, --bin-dir, --snapshot, --versions/);
+    });
+
+    test('parseArgs accepts all known flags', () => {
+        expect(parseArgs(['--write', '--no-launch', '--bin-dir', 'a', '--snapshot', 'b', '--versions', 'c'])).toEqual({
+            write: true,
+            noLaunch: true,
+            binDir: 'a',
+            snapshotPath: 'b',
+            versionsPath: 'c',
+        });
+    });
+});
+
+describe('committed bundled-bins snapshot', () => {
+    const scriptsDir = path.resolve(__dirname, '../../scripts');
+    const snapshot = JSON.parse(fs.readFileSync(path.join(scriptsDir, 'bundled-bins-runtime.json'), 'utf8'));
+    const versions = JSON.parse(fs.readFileSync(path.join(scriptsDir, 'versions.json'), 'utf8'));
+
+    test.each([
+        ['meilisearch', 'meilisearch'],
+        ['qbittorrent-nox', 'qbittorrentNox'],
+        ['ffprobe', 'ffprobe'],
+    ])('%s section version matches versions.json', (section, versionKey) => {
+        expect(snapshot[section].version).toBe(versions[versionKey]);
+    });
+
+    test('meilisearch.exe fingerprint equals the pinned archive SHA-256', () => {
+        expect(snapshot.meilisearch.directoryFingerprint['meilisearch.exe']).toBe(versions.sha256.meilisearch);
     });
 });

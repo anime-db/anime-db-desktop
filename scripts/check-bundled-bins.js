@@ -82,6 +82,15 @@ function launchArgs(bin, profileDir) {
     }
 }
 
+/** Best effort: on Windows the profile may stay locked (EBUSY/EPERM), which must not fail the check. */
+function removeProfileDir(profileDir) {
+    try {
+        fs.rmSync(profileDir, { recursive: true, force: true, maxRetries: 3 });
+    } catch {
+        // a leftover temp directory is harmless
+    }
+}
+
 /**
  * Launches the bin with a version flag and applies the rule: exit code 0, first output line
  * non-empty and containing the upstream version. Returns an error line, or null when it passes.
@@ -101,7 +110,7 @@ function checkLaunch(bin, version, binDir, exec) {
         }
         return `${bin.name}: запуск не удался: ${err.message}`;
     } finally {
-        if (profileDir !== null) fs.rmSync(profileDir, { recursive: true, force: true });
+        if (profileDir !== null) removeProfileDir(profileDir);
     }
 
     const firstLine = String(output ?? '').split(/\r?\n/)[0].trim();
@@ -115,6 +124,8 @@ function checkLaunch(bin, version, binDir, exec) {
 
     return null;
 }
+
+const KNOWN_FLAGS = ['--write', '--no-launch', '--bin-dir', '--snapshot', '--versions'];
 
 function parseArgs(argv) {
     const options = {};
@@ -135,6 +146,10 @@ function parseArgs(argv) {
             case '--versions':
                 options.versionsPath = argv[++i];
                 break;
+            default:
+                throw new BundledBinsError(
+                    `Неизвестный аргумент: ${argv[i]}. Допустимые флаги: ${KNOWN_FLAGS.join(', ')}`,
+                );
         }
     }
     return options;
@@ -242,7 +257,17 @@ function run({
 }
 
 function main() {
-    const result = run(parseArgs(process.argv.slice(2)));
+    let options;
+    try {
+        options = parseArgs(process.argv.slice(2));
+    } catch (err) {
+        if (err instanceof BundledBinsError) {
+            console.error(err.message);
+            process.exit(1);
+        }
+        throw err;
+    }
+    const result = run(options);
 
     (result.ok ? console.log : console.error)(result.message);
     for (const line of result.diff) {
@@ -259,6 +284,7 @@ if (require.main === module) {
 module.exports = {
     run,
     parseArgs,
+    BundledBinsError,
     BINS,
     LAUNCH_TIMEOUT_MS,
 };
