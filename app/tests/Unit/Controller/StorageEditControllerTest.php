@@ -151,7 +151,7 @@ final class StorageEditControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
-        $response = $this->createController(twig: $twig)->edit($storage);
+        $response = $this->createController(twig: $twig)->edit($storage, new Request());
 
         $this->assertSame(200, $response->getStatusCode());
     }
@@ -757,6 +757,21 @@ final class StorageEditControllerTest extends TestCase
             ))
             ->willReturn('<html></html>');
 
-        $this->createController(twig: $twig, settings: $settings)->edit($storage);
+        $this->createController(twig: $twig, settings: $settings)->edit($storage, new Request());
+    }
+
+    public function testEditPrefillsPathFromQuery(): void
+    {
+        $storage = new Storage('Library', 'D:\\Anime', StorageType::Folder);
+
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/edit.html.twig', $this->callback(
+                static fn (array $params): bool => $params['path'] === 'E:\\Anime',
+            ))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig)->edit($storage, new Request(['path' => ' E:\\Anime ']));
     }
 }

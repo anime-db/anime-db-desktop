@@ -85,9 +85,13 @@ final class StorageEditController
     }
 
     #[Route('/storage/{id}/edit', name: 'storage_edit', methods: ['GET'])]
-    public function edit(Storage $storage): Response
+    public function edit(Storage $storage, Request $request): Response
     {
-        return $this->renderForm($storage);
+        // Issue #1121: a prefilled new root (e.g. where the storage marker was found); it is only
+        // shown in the form, saving stays the user's own confirmation.
+        $path = trim((string) $request->query->get('path', ''));
+
+        return $this->renderForm($storage, path: $path !== '' ? $path : null);
     }
 
     #[Route('/storage/{id}/edit', name: 'storage_update', methods: ['POST'])]

@@ -31,15 +31,12 @@ use AnimeDb\PluginContracts\Catalog\AnimeFilesChangedEvent;
 use AnimeDb\PluginContracts\Catalog\FilesChangeReason;
 use AnimeDb\PluginContracts\Model\AnimeId;
 use App\Entity\Anime;
-use App\Entity\Enum\StorageType;
 use App\Entity\Exception\InvalidPathException;
 use App\Entity\Storage;
 use App\Message\ScanStorageMessage;
 use App\Repository\AnimeRepository;
 use App\Repository\DownloadRepository;
-use App\Repository\StorageRepository;
 use App\Service\JobLock\JobLockService;
-use App\Service\Path\LexicalPathNormalizer;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -54,12 +51,10 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  */
 final class ManualLinkService
 {
-    private const array LINKABLE_TYPES = [StorageType::Folder, StorageType::External, StorageType::ExternalR];
-
     public function __construct(
-        private readonly StorageRepository $storages,
         private readonly AnimeRepository $animes,
         private readonly DownloadRepository $downloads,
+        private readonly StorageLocator $locator,
         private readonly StorageMarkerService $markerService,
         private readonly JobLockService $jobLock,
         private readonly EntityManagerInterface $entityManager,
@@ -74,36 +69,20 @@ final class ManualLinkService
      */
     public function link(Anime $anime, string $selectedPath, ?int $relocateStorageId = null): ManualLinkResult
     {
-        $selectedPath = trim($selectedPath);
-        if (preg_match('/^(?:[A-Za-z]:[\\\\\/]|\\\\\\\\|\/)/', $selectedPath) !== 1) {
+        $location = $this->locator->locate($selectedPath);
+        if ($location->kind === StorageLocationKind::InvalidPath) {
             return ManualLinkResult::refused(ManualLinkStatus::InvalidPath);
         }
-
-        // The marker climb works on the raw string, so a path that could leave a directory sideways is not accepted.
-        if (preg_grep('/^\.\.?$/', preg_split('/[\\\\\/]+/', $selectedPath) ?: []) !== []) {
-            return ManualLinkResult::refused(ManualLinkStatus::InvalidPath);
+        if ($location->kind === StorageLocationKind::Outside) {
+            return ManualLinkResult::outsideStorages($location->suggestedStoragePath ?? trim($selectedPath));
         }
 
-        $path = LexicalPathNormalizer::normalize($selectedPath);
-        if ($path === '') {
-            return ManualLinkResult::refused(ManualLinkStatus::InvalidPath);
-        }
-
-        $relocate = false;
-        $marked = $this->findStorageByMarker($selectedPath);
-        if ($marked !== null) {
-            [$storage, $rootPath] = $marked;
-            $relocate = !$this->isSamePath($storage->requirePath(), $rootPath);
-        } else {
-            $storage = $this->findStorageByPath($path);
-            if ($storage === null) {
-                return ManualLinkResult::outsideStorages($this->parentPath($selectedPath) ?? $selectedPath);
-            }
-            $rootPath = $storage->requirePath();
-        }
-
-        $normalizedRoot = LexicalPathNormalizer::normalize($rootPath);
-        if ($this->isSamePath($path, $normalizedRoot)) {
+        $storage = $location->storage ?? throw new \LogicException('A found location always names its storage.');
+        $rootPath = $location->rootPath ?? throw new \LogicException('A found location always has a root.');
+        $path = $location->path ?? '';
+        $relocate = $location->relocated;
+        $normalizedRoot = $location->normalizedRoot();
+        if ($location->isRoot()) {
             return ManualLinkResult::refused(ManualLinkStatus::StorageRoot, $storage);
         }
 
@@ -112,7 +91,7 @@ final class ManualLinkService
             return ManualLinkResult::refused(ManualLinkStatus::ScanRunning, $storage);
         }
 
-        if (!LexicalPathNormalizer::isWithin($normalizedRoot, $path)) {
+        if (!$location->isWithinRoot()) {
             return ManualLinkResult::refused(ManualLinkStatus::InvalidPath, $storage);
         }
 
@@ -160,7 +139,7 @@ final class ManualLinkService
 
             $previousPath = $storage->requirePath();
             try {
-                $storage->relocate($this->absoluteRoot($rootPath));
+                $storage->relocate($this->locator->absoluteRoot($rootPath));
             } catch (InvalidPathException) {
                 return ManualLinkResult::refused(ManualLinkStatus::InvalidPath, $storage);
             }
@@ -182,50 +161,6 @@ final class ManualLinkService
         $anime->setStorage(null);
         $anime->setStoragePath(null);
         $this->entityManager->flush();
-    }
-
-    /**
-     * Walks up from $selectedPath looking for the first marker that names a storage existing in
-     * the database; a marker with an unknown id (deleted storage, foreign installation) is skipped.
-     *
-     * @return array{Storage, string}|null the storage and the directory its marker was found in
-     */
-    private function findStorageByMarker(string $selectedPath): ?array
-    {
-        for ($dir = $selectedPath; $dir !== null; $dir = $this->parentPath($dir)) {
-            $markerId = $this->markerService->readMarkerId($dir);
-            if ($markerId === null) {
-                continue;
-            }
-
-            $storage = $this->entityManager->find(Storage::class, $markerId);
-            if ($storage instanceof Storage && \in_array($storage->getType(), self::LINKABLE_TYPES, true) && $storage->getPath() !== null) {
-                return [$storage, $dir];
-            }
-        }
-
-        return null;
-    }
-
-    /** The storage with the longest root containing $normalizedPath (storage paths are not unique, storages can nest). */
-    private function findStorageByPath(string $normalizedPath): ?Storage
-    {
-        $best = null;
-        $bestLength = -1;
-        foreach ($this->storages->findAllOrderedByName() as $storage) {
-            $root = $storage->getPath();
-            if ($root === null || !\in_array($storage->getType(), self::LINKABLE_TYPES, true)) {
-                continue;
-            }
-
-            $normalizedRoot = LexicalPathNormalizer::normalize($root);
-            if ($normalizedRoot !== '' && LexicalPathNormalizer::isWithin($normalizedRoot, $normalizedPath) && \strlen($normalizedRoot) > $bestLength) {
-                $best = $storage;
-                $bestLength = \strlen($normalizedRoot);
-            }
-        }
-
-        return $best;
     }
 
     /** @return list<string>|null null when the root cannot be listed */
@@ -279,53 +214,6 @@ final class ManualLinkService
         }
 
         return null;
-    }
-
-    /**
-     * The marker directory the way {@see Storage::relocate()} accepts it: backslash separators and
-     * resolved segments, with the root shape (drive, UNC share, POSIX root) kept, which normalize()
-     * strips.
-     */
-    private function absoluteRoot(string $path): string
-    {
-        $normalized = LexicalPathNormalizer::normalize($path);
-
-        if (preg_match('/^[A-Za-z]:$/', $normalized) === 1) {
-            return $normalized.'\\';
-        }
-        if (preg_match('/^(?:\\\\|\/\/)/', $path) === 1) {
-            return '\\\\'.$normalized;
-        }
-        if (str_starts_with($path, '/')) {
-            return '/'.str_replace('\\', '/', $normalized);
-        }
-
-        return $normalized;
-    }
-
-    private function isSamePath(string $a, string $b): bool
-    {
-        return mb_strtolower(LexicalPathNormalizer::normalize($a)) === mb_strtolower(LexicalPathNormalizer::normalize($b));
-    }
-
-    /** The containing directory of $path, or null once the drive/share root is reached. */
-    private function parentPath(string $path): ?string
-    {
-        $trimmed = rtrim($path, '\\/');
-        $cut = max((int) strrpos($trimmed, '\\'), (int) strrpos($trimmed, '/'));
-        $parent = substr($trimmed, 0, $cut);
-
-        if (preg_match('/^[A-Za-z]:$/', $parent) === 1) {
-            return $parent.'\\';
-        }
-
-        // What is left has no separator of its own: a bare UNC host, or nothing at all.
-        $rest = ltrim($parent, '\\/');
-        if ($rest === '' || strpbrk($rest, '\\/') === false) {
-            return null;
-        }
-
-        return $parent;
     }
 
     private function dispatchFilesChanged(Anime $anime): void

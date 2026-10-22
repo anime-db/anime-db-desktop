@@ -260,3 +260,12 @@ read-only, `#[AutoconfigureTag]` там не повесить), а `EntryWidgetR
 метку на 6 ч. Скан нельзя переносить с `async` на другой потребитель — на этом держится отсутствие
 дублей. `ScanStorageService` снимает mtime корня до чтения списка верхнего уровня, а
 `Storage::relocate()` при смене пути обнуляет `fileModified`.
+
+## Резолвер «Открыть в AnimeDB» (`GET /explorer/open?path=`)
+
+Только чтение и редирект (#1121): `ExplorerOpenController` по пути папки ведёт на `storage_new`, `storage_index`,
+`anime_show`, `anime_new` или `storage_edit?path=` (маркер найден не там, где корень в БД). Поиск хранилища
+(подъём по маркерам, затем самый длинный корень-префикс, валидация пути) живёт в одном месте —
+`StorageLocator`, им же пользуется `ManualLinkService`. Маршрут отвечает только на запрос с заголовком
+`X-AnimeDB-Shell: 1` (его ставит Electron через `loadURL(..., { extraHeaders })`), иначе 403 — **до** любого
+обращения к ФС: чтение маркера или проверка UNC-пути `\\host\x` отправляет NTLM-хэш на чужой хост.
