@@ -382,6 +382,7 @@ module.exports = {
     fingerprintDirectory,
     findRuntimeBinary,
     diffFacts,
+    diffMap,
     readSnapshot,
     writeSnapshot,
     RuntimeUnavailableError,

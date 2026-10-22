@@ -139,6 +139,7 @@ const QBITTORRENT_NOX = {
     zipName: QBITTORRENT_NOX_ZIP_NAME,
     destDir: path.join(binDir, 'qbittorrent-nox'),
     dest: path.join(binDir, 'qbittorrent-nox', 'qbittorrent-nox.exe'),
+    sha256: versions.sha256.qbittorrentNox,
 };
 
 const FFPROBE_TAG = `ffprobe-${versions.ffprobe}`;
@@ -425,12 +426,21 @@ async function downloadBin(bin) {
     console.log(`${bin.name} v${bin.version} downloaded successfully`);
 }
 
-// Downloads the prebuilt qbittorrent-nox bundle and verifies its SHA-256 checksum and Ed25519
-// signature BEFORE extracting anything. Throws (and extracts nothing) on any verification failure.
+// Downloads the prebuilt qbittorrent-nox bundle and verifies its SHA-256 checksum (against BOTH the
+// pinned value in versions.json and the upstream SHA256SUMS file) and Ed25519 signature BEFORE
+// extracting anything. The pin answers "is it exactly the artifact we reviewed", the signed
+// SHA256SUMS answers "who built this" — see downloadFfprobe. Throws (and extracts nothing) on any
+// verification failure.
 async function downloadQbittorrentNox(bin) {
     if (isUpToDate(bin)) {
         console.log(`${bin.name} v${bin.version} already up to date, skipping`);
         return;
+    }
+
+    if (!bin.sha256) {
+        throw new Error(
+            `Missing pinned SHA-256 for ${bin.name} — add it to versions.sha256.qbittorrentNox in scripts/versions.json`,
+        );
     }
 
     console.log(`Downloading ${bin.name} v${bin.version}...`);
@@ -441,13 +451,20 @@ async function downloadQbittorrentNox(bin) {
     ]);
 
     console.log(`Verifying ${bin.name} SHA-256 checksum...`);
-    const expectedHash = parseSha256Sums(sumsText, bin.zipName);
-    if (!expectedHash) {
+    const actualHash = crypto.createHash('sha256').update(zipBuffer).digest('hex');
+    if (actualHash !== bin.sha256) {
+        throw new Error(
+            `SHA-256 mismatch for ${bin.zipName}: expected (versions.json) ${bin.sha256}, got ${actualHash}`,
+        );
+    }
+    const sumsHash = parseSha256Sums(sumsText, bin.zipName);
+    if (!sumsHash) {
         throw new Error(`SHA-256 for ${bin.zipName} not found in SHA256SUMS`);
     }
-    const actualHash = crypto.createHash('sha256').update(zipBuffer).digest('hex');
-    if (actualHash !== expectedHash) {
-        throw new Error(`SHA-256 mismatch for ${bin.zipName}: expected ${expectedHash}, got ${actualHash}`);
+    if (actualHash !== sumsHash) {
+        throw new Error(
+            `SHA-256 mismatch for ${bin.zipName}: expected (SHA256SUMS) ${sumsHash}, got ${actualHash}`,
+        );
     }
 
     console.log(`Verifying ${bin.name} Ed25519 signature...`);
@@ -520,16 +537,49 @@ async function downloadFfprobe(bin) {
     console.log(`${bin.name} v${bin.version} downloaded successfully`);
 }
 
-async function main() {
-    for (const bin of BINS) {
-        await downloadBin(bin);
+// Every bin the script can fetch, keyed by the `name` accepted by `--only`.
+const DOWNLOADERS = [
+    { name: 'frankenphp', run: () => downloadBin(BINS.find((bin) => bin.name === 'frankenphp')) },
+    { name: 'meilisearch', run: () => downloadBin(BINS.find((bin) => bin.name === 'meilisearch')) },
+    { name: 'qbittorrent-nox', run: () => downloadQbittorrentNox(QBITTORRENT_NOX) },
+    { name: 'ffprobe', run: () => downloadFfprobe(FFPROBE) },
+];
+
+// Parses `--only a,b` / `--only=a,b` into a list of names, or null when the flag is absent.
+// Throws on an unknown name instead of silently skipping it.
+function parseOnly(argv) {
+    let value = null;
+    for (let i = 0; i < argv.length; i++) {
+        if (argv[i] === '--only') {
+            value = argv[++i] ?? '';
+        } else if (argv[i].startsWith('--only=')) {
+            value = argv[i].slice('--only='.length);
+        }
     }
-    await downloadQbittorrentNox(QBITTORRENT_NOX);
-    await downloadFfprobe(FFPROBE);
+    if (value === null) return null;
+
+    const names = value.split(',').map((n) => n.trim()).filter(Boolean);
+    const known = DOWNLOADERS.map((d) => d.name);
+    const unknown = names.filter((n) => !known.includes(n));
+    if (names.length === 0 || unknown.length > 0) {
+        throw new Error(
+            `Unknown --only value${unknown.length ? ` "${unknown.join(', ')}"` : ' (empty)'}; allowed names: ${known.join(', ')}`,
+        );
+    }
+    return names;
+}
+
+async function main(argv) {
+    const only = parseOnly(argv);
+    for (const downloader of DOWNLOADERS) {
+        if (only === null || only.includes(downloader.name)) {
+            await downloader.run();
+        }
+    }
 }
 
 if (require.main === module) {
-    main().catch((err) => {
+    main(process.argv.slice(2)).catch((err) => {
         console.error('download-bins failed:', err.message);
         process.exit(1);
     });
@@ -545,6 +595,7 @@ module.exports = {
     downloadBin,
     downloadQbittorrentNox,
     downloadFfprobe,
+    parseOnly,
     BINS,
     FRANKENPHP_FILES,
     QBITTORRENT_NOX,
