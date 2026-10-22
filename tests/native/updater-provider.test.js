@@ -41,9 +41,15 @@ const yml = (version) => `version: ${version}\nfiles:\n  - url: AnimeDB-Setup-${
 function setup(feeds) {
     const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
     const executor = {
-        downloadToBuffer: jest.fn(async (url) => {
+        downloadToBuffer: jest.fn(async (url, options) => {
             const feed = feeds[url.hostname === 'github.com' ? 'github' : 'mr01'];
             if (feed instanceof Error) throw feed;
+            if (feed === 'hang') {
+                // accepts the connection and stays silent until cancelled
+                return new Promise((_resolve, reject) => {
+                    options.cancellationToken.onCancel(() => reject(new Error('cancelled')));
+                });
+            }
             return Buffer.from(url.pathname.endsWith('.sig') ? feed.sig : feed.yml);
         }),
     };
@@ -119,8 +125,35 @@ describe('SignedUpdateProvider', () => {
         expect(oldMap.href).toBe('https://mr01.anime-db.org/app/1.0.0/AnimeDB-Setup-1.0.0.exe.blockmap');
     });
 
-    test('refuses to resolve files for update info of unknown origin', () => {
-        const s = setup({});
-        expect(() => s.provider.resolveFiles({ version: '1.0.0', files: [] })).toThrow();
+    test('refuses to resolve files for update info of unknown origin', async () => {
+        const s = setup({ github: good('1.0.0'), mr01: good('1.0.0') });
+        const info = await s.provider.getLatestVersion();
+        expect(() => s.provider.resolveFiles({ ...info })).toThrow(/verified source/);
+        expect(() => s.provider.resolveFiles({ version: '1.0.0', files: [{ url: 'a.exe', sha512: 'x', size: 1 }] }))
+            .toThrow(/verified source/);
+    });
+
+    test('cancels a silent source after the timeout and uses the other one', async () => {
+        jest.useFakeTimers();
+        try {
+            const s = setup({ github: 'hang', mr01: good('1.0.0') });
+            const pending = s.provider.getLatestVersion();
+            await jest.advanceTimersByTimeAsync(1000);
+            const info = await pending;
+            expect(info.version).toBe('1.0.0');
+            expect(s.logger.warn).toHaveBeenCalledWith(expect.stringMatching(/github.*cancelled/));
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    test.each([
+        ['without version', 'files: []\n'],
+        ['with a non-semver version', 'version: not-a-semver\n'],
+    ])('rejects a correctly signed latest.yml %s', async (_n, text) => {
+        const s = setup({ github: { yml: text, sig: sign(text) }, mr01: good('1.0.0') });
+        const info = await s.provider.getLatestVersion();
+        expect(info.version).toBe('1.0.0');
+        expect(s.logger.warn).toHaveBeenCalledWith(expect.stringMatching(/github.*no valid version/));
     });
 });
