@@ -53,7 +53,11 @@ final readonly class StorageLocation
         return new self(StorageLocationKind::InvalidPath);
     }
 
-    /** $suggestedStoragePath is the folder the selected entry lies in, to prefill the "create storage" form. */
+    /**
+     * $suggestedStoragePath is the folder the selected entry lies in, to prefill the "create storage" form.
+     * It is meant for the manual link flow, where the selected entry is an item inside a folder; callers that
+     * select a folder itself (e.g. "Open in AnimeDB") suggest that folder instead.
+     */
     public static function outside(string $suggestedStoragePath): self
     {
         return new self(StorageLocationKind::Outside, suggestedStoragePath: $suggestedStoragePath);

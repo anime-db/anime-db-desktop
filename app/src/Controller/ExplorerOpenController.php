@@ -82,14 +82,17 @@ final class ExplorerOpenController
             return new Response('', Response::HTTP_FORBIDDEN);
         }
 
-        $location = $this->locator->locate((string) $request->query->get('path', ''));
+        $selectedPath = trim((string) $request->query->get('path', ''));
+        $location = $this->locator->locate($selectedPath);
 
         if ($location->kind === StorageLocationKind::InvalidPath) {
             return $this->storageListWithError($request);
         }
 
         if ($location->kind === StorageLocationKind::Outside) {
-            return $this->redirectTo('storage_new', ['path' => $location->suggestedStoragePath]);
+            // The shell only offers this action for folders and drives, so the selected path itself is the folder to
+            // suggest; $location->suggestedStoragePath (the parent) is for the manual link flow, which selects items.
+            return $this->redirectTo('storage_new', ['path' => $selectedPath]);
         }
 
         $storage = $location->storage ?? throw new \LogicException('A found location always names its storage.');
