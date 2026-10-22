@@ -80,9 +80,7 @@ final class StorageMarkerService
         $markerId = $this->readMarkerId($path);
 
         if ($markerId === null) {
-            $this->writeMarker($path, $id);
-
-            return StorageMarkerResult::Created;
+            return $this->writeMarker($path, $id) ? StorageMarkerResult::Created : StorageMarkerResult::WriteFailed;
         }
 
         if ($markerId === $id) {
@@ -92,9 +90,7 @@ final class StorageMarkerService
         $owner = $this->entityManager->find(Storage::class, $markerId);
 
         if ($owner === null) {
-            $this->writeMarker($path, $id);
-
-            return StorageMarkerResult::Reclaimed;
+            return $this->writeMarker($path, $id) ? StorageMarkerResult::Reclaimed : StorageMarkerResult::WriteFailed;
         }
 
         return StorageMarkerResult::Conflict;
@@ -218,12 +214,12 @@ final class StorageMarkerService
         return \is_numeric($id) ? (int) $id : null;
     }
 
-    private function writeMarker(string $storagePath, int $id): void
+    private function writeMarker(string $storagePath, int $id): bool
     {
         $markerPath = $this->markerPath($storagePath);
         $content = is_file($markerPath) ? (string) file_get_contents($markerPath) : '';
 
-        $this->writeFile($markerPath, $this->withMarkerId($content, $id));
+        return $this->writeFile($markerPath, $this->withMarkerId($content, $id));
     }
 
     /**
@@ -349,9 +345,9 @@ final class StorageMarkerService
     /**
      * Writes $content to the marker. An existing hidden/system file refuses writes on Windows, so
      * its attributes are lifted for the write and put back afterwards; a new file becomes hidden.
-     * A failed write is logged, never thrown.
+     * A failed write is logged, never thrown, and reported as false.
      */
-    private function writeFile(string $markerPath, string $content): void
+    private function writeFile(string $markerPath, string $content): bool
     {
         $existed = is_file($markerPath);
         $attributes = ['H' => !$existed, 'S' => false];
@@ -381,6 +377,8 @@ final class StorageMarkerService
                 }
             }
         }
+
+        return $written !== false;
     }
 
     /** @return ?array{H: bool, S: bool} null when `attrib` output could not be parsed */

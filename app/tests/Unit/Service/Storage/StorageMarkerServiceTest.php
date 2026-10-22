@@ -400,7 +400,7 @@ final class StorageMarkerServiceTest extends TestCase
         $this->assertSame("; c\r\n[Other]\r\nk=\"v\"\r\n", file_get_contents($this->storageDir.'/desktop.ini'));
     }
 
-    public function testFailedWriteLogsWarningWithoutThrowing(): void
+    public function testFailedWriteLogsWarningAndReportsWriteFailed(): void
     {
         $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
         $logger->expects($this->once())->method('warning');
@@ -409,6 +409,30 @@ final class StorageMarkerServiceTest extends TestCase
 
         $result = $service->reconcile($this->storageWithId(5, $missing));
 
-        $this->assertSame(StorageMarkerResult::Created, $result);
+        $this->assertSame(StorageMarkerResult::WriteFailed, $result);
+        $this->assertFileDoesNotExist($missing.'/desktop.ini');
+    }
+
+    public function testFailedReclaimWriteReportsWriteFailedAndKeepsOldMarker(): void
+    {
+        $markerPath = $this->storageDir.'/desktop.ini';
+        file_put_contents($markerPath, "[AnimeDB]\nid=999\n");
+        chmod($markerPath, 0444);
+
+        if (is_writable($markerPath)) {
+            $this->markTestSkipped('File permissions are not enforced for this user.');
+        }
+
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('find')->with(Storage::class, 999)->willReturn(null);
+        $logger = $this->createMock(\Psr\Log\LoggerInterface::class);
+        $logger->expects($this->once())->method('warning');
+        $service = new StorageMarkerService($entityManager, null, $logger);
+
+        $result = $service->reconcile($this->storageWithId(5, $this->storageDir));
+
+        $this->assertSame(StorageMarkerResult::WriteFailed, $result);
+        $this->assertSame("[AnimeDB]\nid=999\n", file_get_contents($markerPath));
+        chmod($markerPath, 0644);
     }
 }

@@ -246,6 +246,27 @@ final class StorageNewControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function testCreateOnAFolderWithForeignDesktopIniSavesStorageAndLeavesFileUntouched(): void
+    {
+        $dir = $this->makeDir();
+        $content = "[LocalizedFileNames]\r\nFoo (1).lnk=@%SystemRoot%\\system32\\shell32.dll,-21770\r\n";
+        file_put_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini', $content);
+
+        $persistedStorage = null;
+        $entityManager = $this->entityManagerAssigningId(7, $persistedStorage);
+
+        $response = $this->createController(entityManager: $entityManager)->create(Request::create('/storage/new', 'POST', [
+            'name' => 'Foreign ini',
+            'path' => $dir,
+            'type' => 'folder',
+            '_token' => 'token',
+        ]));
+
+        $this->assertInstanceOf(RedirectResponse::class, $response);
+        $this->assertNotNull($persistedStorage);
+        $this->assertSame($content, file_get_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini'));
+    }
+
     public function testCreateDoesNotWriteMarkerForNonWritableType(): void
     {
         $dir = $this->makeDir();

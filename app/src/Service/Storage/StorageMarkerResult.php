@@ -43,4 +43,7 @@ enum StorageMarkerResult
 
     /** desktop.ini exists but cannot be parsed; it was left untouched and no marker was written. */
     case Unreadable;
+
+    /** The marker could not be written; the path was left untouched. */
+    case WriteFailed;
 }
