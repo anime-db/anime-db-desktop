@@ -230,6 +230,8 @@ final class StorageMarkerService
      * True when desktop.ini exists but cannot be safely read back: PHP's ini grammar rejects it
      * (parse_ini_file() === false — e.g. keys with parentheses, reserved words as keys) or it is
      * UTF-16 (BOM), which PHP would misread as garbage keys. Such a file is never written to.
+     * The BOM check is the only guard for UTF-16BE (parse_ini_file() accepts it as an empty
+     * file); UTF-16LE is also rejected by parse_ini_file() itself, so there it is a safety net.
      */
     private function isUnreadable(string $markerPath): bool
     {
@@ -278,15 +280,27 @@ final class StorageMarkerService
         }
 
         [$start, $end] = $range;
+        $found = false;
+        // Case-sensitive like parse_ini_file(), which reads the last duplicate: keep the first
+        // `id` line (rewritten) and drop the rest so the reader and writer always agree.
         for ($i = $start + 1; $i < $end; ++$i) {
-            if (preg_match('/^\s*id\s*=/i', $lines[$i]) === 1) {
-                $lines[$i] = "id=$id";
-
-                return implode($eol, $lines);
+            if (preg_match('/^\s*id\s*=/', $lines[$i]) !== 1) {
+                continue;
             }
+            if (!$found) {
+                $lines[$i] = "id=$id";
+                $found = true;
+
+                continue;
+            }
+            array_splice($lines, $i, 1);
+            --$i;
+            --$end;
         }
 
-        array_splice($lines, $start + 1, 0, ["id=$id"]);
+        if (!$found) {
+            array_splice($lines, $start + 1, 0, ["id=$id"]);
+        }
 
         return implode($eol, $lines);
     }
@@ -324,7 +338,7 @@ final class StorageMarkerService
             if ($start !== null) {
                 return [$start, $i];
             }
-            if (strcasecmp(trim($m[1]), self::SECTION) === 0) {
+            if (trim($m[1]) === self::SECTION) {
                 $start = $i;
             }
         }
@@ -346,8 +360,12 @@ final class StorageMarkerService
         // also runs on ubuntu-latest CI (.github/workflows/ci.yml), where `attrib` doesn't
         // exist and hiding the file has no meaning, so this is skipped there.
         if (\PHP_OS_FAMILY === 'Windows' && $existed) {
-            $attributes = $this->readAttributes($markerPath);
-            exec('attrib -S -H '.escapeshellarg($markerPath));
+            $read = $this->readAttributes($markerPath);
+            // Unexpected attrib output: leave the attributes alone rather than guess.
+            if ($read !== null) {
+                $attributes = $read;
+                exec('attrib -S -H '.escapeshellarg($markerPath));
+            }
         }
 
         $written = @file_put_contents($markerPath, $content);
@@ -365,14 +383,35 @@ final class StorageMarkerService
         }
     }
 
-    /** @return array{H: bool, S: bool} */
-    private function readAttributes(string $markerPath): array
+    /** @return ?array{H: bool, S: bool} null when `attrib` output could not be parsed */
+    private function readAttributes(string $markerPath): ?array
     {
         $output = [];
         exec('attrib '.escapeshellarg($markerPath), $output);
-        $line = str_replace($markerPath, '', $output[0] ?? '');
 
-        return ['H' => str_contains($line, 'H'), 'S' => str_contains($line, 'S')];
+        return self::parseAttributes($output[0] ?? '', $markerPath);
+    }
+
+    /**
+     * Parses one line of `attrib <file>` output ("A  SH       C:\dir\desktop.ini"): only the
+     * attribute column before the path is inspected, and the line must end with $markerPath
+     * (slashes and case ignored). Anything else (error message, empty output) yields null.
+     *
+     * @return ?array{H: bool, S: bool}
+     */
+    public static function parseAttributes(string $line, string $markerPath): ?array
+    {
+        if (preg_match('/^([ASHRIOXVPB ]*?)\s+((?:[A-Za-z]:[\\\\\/]|\\\\\\\\).*)$/', rtrim($line), $m) !== 1) {
+            return null;
+        }
+
+        $normalize = static fn (string $path): string => strtolower(str_replace('/', '\\', $path));
+
+        if ($normalize(trim($m[2])) !== $normalize($markerPath)) {
+            return null;
+        }
+
+        return ['H' => str_contains($m[1], 'H'), 'S' => str_contains($m[1], 'S')];
     }
 
     private function markerPath(string $storagePath): string

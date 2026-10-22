@@ -309,6 +309,7 @@ final class StorageMarkerServiceTest extends TestCase
         yield 'parenthesised key' => ["[LocalizedFileNames]\r\nFoo (1).lnk=@shell32.dll,-1\r\n"];
         yield 'reserved word key' => ["[LocalizedFileNames]\r\nyes=Foo\r\n"];
         yield 'utf-16 le bom' => ["\xFF\xFE".mb_convert_encoding("[.ShellClassInfo]\r\nIconFile=a.ico\r\n", 'UTF-16LE', 'UTF-8')];
+        yield 'utf-16 be bom' => ["\xFE\xFF".mb_convert_encoding("[.ShellClassInfo]\r\nIconFile=a.ico\r\n", 'UTF-16BE', 'UTF-8')];
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('unreadableContents')]
@@ -336,6 +337,46 @@ final class StorageMarkerServiceTest extends TestCase
 
         $this->assertSame(StorageMarkerResult::Created, $result);
         $this->assertSame($original."[AnimeDB]\r\nid=5\r\n", file_get_contents($this->storageDir.'/desktop.ini'));
+    }
+
+    public function testLowercaseSectionIsNotTreatedAsMarkerAndReconcileConverges(): void
+    {
+        file_put_contents($this->storageDir.'/desktop.ini', "[animedb]\nid=7\n");
+        $service = new StorageMarkerService($this->stubEntityManager());
+        $storage = $this->storageWithId(5, $this->storageDir);
+
+        $this->assertSame(StorageMarkerResult::Created, $service->reconcile($storage));
+        $this->assertSame(StorageMarkerResult::Owned, $service->reconcile($storage));
+        $this->assertSame("[animedb]\nid=7\n[AnimeDB]\nid=5\n", file_get_contents($this->storageDir.'/desktop.ini'));
+    }
+
+    public function testDuplicateIdLinesCollapseSoReclaimConverges(): void
+    {
+        file_put_contents($this->storageDir.'/desktop.ini', "[AnimeDB]\nid=7\nid=9\n[Other]\nk=v\n");
+        $service = new StorageMarkerService($this->stubEntityManager());
+        $storage = $this->storageWithId(5, $this->storageDir);
+
+        $this->assertSame(StorageMarkerResult::Reclaimed, $service->reconcile($storage));
+        $this->assertSame(StorageMarkerResult::Owned, $service->reconcile($storage));
+        $this->assertSame("[AnimeDB]\nid=5\n[Other]\nk=v\n", file_get_contents($this->storageDir.'/desktop.ini'));
+    }
+
+    /** @return iterable<string, array{string, ?array{H: bool, S: bool}}> */
+    public static function attribLines(): iterable
+    {
+        yield 'system hidden' => ['A  SH        D:\\Serials\\desktop.ini', ['H' => true, 'S' => true]];
+        yield 'no flags, S in path' => ['A             D:\\Serials\\desktop.ini', ['H' => false, 'S' => false]];
+        yield 'hidden only, lowercase path' => ['    H         d:\\serials\\desktop.ini', ['H' => true, 'S' => false]];
+        yield 'file not found' => ['File not found - D:\\Serials\\desktop.ini', null];
+        yield 'empty' => ['', null];
+        yield 'other path' => ['A  SH        E:\\Hentai\\desktop.ini', null];
+    }
+
+    /** @param ?array{H: bool, S: bool} $expected */
+    #[\PHPUnit\Framework\Attributes\DataProvider('attribLines')]
+    public function testParseAttributesReadsOnlyTheAttributeColumn(string $line, ?array $expected): void
+    {
+        $this->assertSame($expected, StorageMarkerService::parseAttributes($line, 'D:\\Serials\\desktop.ini'));
     }
 
     public function testReclaimReplacesIdInPlaceKeepingForeignSections(): void
