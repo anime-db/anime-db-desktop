@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AnimeDB storage icon. Derived from the Oxygen Icon Theme (KDE), v6.31.0,
+  LGPL-3.0-or-later; modified by the AnimeDB project — see ../README.md.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <filter id="orange" color-interpolation-filters="sRGB">
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer>
+        <feFuncR type="table" tableValues="0.14 0.62 0.93 0.99 1"/>
+        <feFuncG type="table" tableValues="0.05 0.20 0.36 0.52 0.93"/>
+        <feFuncB type="table" tableValues="0.00 0.00 0.01 0.10 0.82"/>
+        <feFuncA type="identity"/>
+      </feComponentTransfer>
+    </filter>
+  </defs>
+  <image xlink:href="server-database.svg" x="0" y="0" width="256" height="256" filter="url(#orange)"/>
+</svg>
