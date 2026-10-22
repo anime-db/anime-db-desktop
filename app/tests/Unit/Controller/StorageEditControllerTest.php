@@ -242,6 +242,89 @@ final class StorageEditControllerTest extends TestCase
         $this->assertSame("[AnimeDB]\nid=99\n", file_get_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini'));
     }
 
+    public function testUpdateAppliesIconExactlyOnceWhenMarkerIsOwned(): void
+    {
+        $dir = $this->makeDir();
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->setStorageId($storage, 23);
+        $markerService = new StorageMarkerService($this->markerEntityManager(null));
+
+        $iconService = $this->createMock(StorageIconService::class);
+        $iconService->expects($this->once())->method('apply')->with($storage);
+
+        $this->createController(markerService: $markerService, iconService: $iconService)->update($storage, Request::create('/storage/23/edit', 'POST', [
+            'name' => 'Main folder',
+            'path' => $dir,
+            'type' => 'folder',
+            '_token' => 'token',
+        ]));
+    }
+
+    public function testUpdateNeverCallsApplyOnMarkerConflict(): void
+    {
+        $dir = $this->makeDir();
+        file_put_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini', "[AnimeDB]\nid=99\n");
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->setStorageId($storage, 24);
+        $markerService = new StorageMarkerService($this->markerEntityManager(new Storage('Other', '/elsewhere', StorageType::Folder)));
+
+        $iconService = $this->createMock(StorageIconService::class);
+        $iconService->expects($this->never())->method('apply');
+
+        $this->createController(markerService: $markerService, iconService: $iconService)->update($storage, Request::create('/storage/24/edit', 'POST', [
+            'name' => 'Main folder',
+            'path' => $dir,
+            'type' => 'folder',
+            '_token' => 'token',
+        ]));
+    }
+
+    public function testUpdateRelocationTakesTheIconBackFromTheOldRoot(): void
+    {
+        $oldDir = $this->makeDir();
+        $newDir = $this->makeDir();
+        $storage = new Storage('Main folder', $oldDir, StorageType::Folder);
+        $this->setStorageId($storage, 25);
+        $markerService = new StorageMarkerService($this->markerEntityManager(null));
+        $iconService = new StorageIconService($markerService, new AutorunInfReader(), __DIR__.'/../../../resources/storage-icons');
+        $markerService->reconcile($storage);
+        $iconService->apply($storage);
+        $this->assertFileExists($oldDir.\DIRECTORY_SEPARATOR.'animedb-folder.ico');
+
+        $this->createController(markerService: $markerService, iconService: $iconService)->update($storage, Request::create('/storage/25/edit', 'POST', [
+            'name' => 'Main folder',
+            'path' => $newDir,
+            'type' => 'folder',
+            '_token' => 'token',
+        ]));
+
+        $this->assertSame([], glob($oldDir.\DIRECTORY_SEPARATOR.'*') ?: []);
+        $this->assertFileExists($newDir.\DIRECTORY_SEPARATOR.'animedb-folder.ico');
+    }
+
+    public function testUpdateToAnUnwritableTypeTakesTheIconBackAndKeepsTheMarker(): void
+    {
+        $dir = $this->makeDir();
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->setStorageId($storage, 26);
+        $markerService = new StorageMarkerService($this->markerEntityManager(null));
+        $iconService = new StorageIconService($markerService, new AutorunInfReader(), __DIR__.'/../../../resources/storage-icons');
+        $markerService->reconcile($storage);
+        $iconService->apply($storage);
+        $this->assertFileExists($dir.\DIRECTORY_SEPARATOR.'animedb-folder.ico');
+
+        $this->createController(markerService: $markerService, iconService: $iconService)->update($storage, Request::create('/storage/26/edit', 'POST', [
+            'name' => 'Main folder',
+            'path' => $dir,
+            'type' => 'external-r',
+            '_token' => 'token',
+        ]));
+
+        $this->assertFileDoesNotExist($dir.\DIRECTORY_SEPARATOR.'animedb-folder.ico');
+        $this->assertStringNotContainsString('IconResource', (string) file_get_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini'));
+        $this->assertSame(26, $markerService->readMarkerId($dir));
+    }
+
     private function markerEntityManager(?Storage $owner): EntityManagerInterface
     {
         $entityManager = $this->createStub(EntityManagerInterface::class);

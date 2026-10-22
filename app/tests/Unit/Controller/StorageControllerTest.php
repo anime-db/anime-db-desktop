@@ -76,6 +76,8 @@ final class StorageControllerTest extends TestCase
     use CreatesInMemoryEntityManager;
     use RunsMigrations;
 
+    private const ICONS = __DIR__.'/../../../resources/storage-icons';
+
     /** @var list<string> */
     private array $dirsToClean = [];
 
@@ -163,6 +165,7 @@ final class StorageControllerTest extends TestCase
         ?AppSettingsProvider $settings = null,
         ?ScanRunJournal $journal = null,
         ?AnimeRepository $animes = null,
+        string $iconsDir = '/nonexistent-storage-icons',
     ): StorageController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -202,7 +205,7 @@ final class StorageControllerTest extends TestCase
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
             $storageMarker,
-            new StorageIconService($storageMarker, new AutorunInfReader(), '/nonexistent-storage-icons'),
+            new StorageIconService($storageMarker, new AutorunInfReader(), $iconsDir),
             $storageAvailability ?? new StorageAvailabilityService(),
             $jobLockService,
             $downloads,
@@ -693,6 +696,26 @@ final class StorageControllerTest extends TestCase
 
         $controller->delete($storage, $request);
 
+        $this->assertFileDoesNotExist($dir.\DIRECTORY_SEPARATOR.'desktop.ini');
+    }
+
+    public function testDeleteTakesBackTheIconBeforeForgettingTheMarker(): void
+    {
+        $dir = $this->makeDir();
+        $storage = new Storage('Main folder', $dir, StorageType::Folder);
+        $this->setStorageId($storage, 42);
+
+        $markerEntityManager = $this->createStub(EntityManagerInterface::class);
+        $markerEntityManager->method('find')->willReturn(null);
+        $storageMarker = new StorageMarkerService($markerEntityManager);
+        $this->assertTrue($storageMarker->reconcile($storage)->ownsPath());
+        (new StorageIconService($storageMarker, new AutorunInfReader(), self::ICONS))->apply($storage);
+        $this->assertFileExists($dir.\DIRECTORY_SEPARATOR.'animedb-folder.ico');
+
+        $controller = $this->createController(storageMarker: $storageMarker, iconsDir: self::ICONS);
+        $controller->delete($storage, Request::create('/storage/42/delete', 'POST', ['_token' => 'token']));
+
+        $this->assertSame([], glob($dir.\DIRECTORY_SEPARATOR.'*') ?: []);
         $this->assertFileDoesNotExist($dir.\DIRECTORY_SEPARATOR.'desktop.ini');
     }
 

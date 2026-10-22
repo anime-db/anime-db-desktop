@@ -41,7 +41,7 @@ use Psr\Log\NullLogger;
  * AND the entry points at one of our icon names; a foreign `autorun.inf` or icon is left untouched.
  * Failures are logged as warnings and never thrown.
  */
-final class StorageIconService
+class StorageIconService
 {
     private const AUTORUN_FILENAME = 'autorun.inf';
 

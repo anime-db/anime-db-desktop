@@ -125,14 +125,14 @@ final class ManualLinkServiceTest extends TestCase
         return $dir;
     }
 
-    private function newService(): ManualLinkService
+    private function newService(string $iconsDir = '/nonexistent-storage-icons'): ManualLinkService
     {
         return new ManualLinkService(
             new AnimeRepository($this->entityManager),
             new DownloadRepository($this->entityManager),
             new StorageLocator(new StorageRepository($this->entityManager), $this->markers, $this->entityManager),
             $this->markers,
-            new StorageIconService($this->markers, new AutorunInfReader(), '/nonexistent-storage-icons'),
+            new StorageIconService($this->markers, new AutorunInfReader(), $iconsDir),
             $this->jobLock,
             $this->entityManager,
             $this->dispatcher,
@@ -252,6 +252,25 @@ final class ManualLinkServiceTest extends TestCase
         $this->assertSame($storage, $anime->getStorage());
         $this->assertNull($this->markers->readMarkerId($oldRoot));
         $this->assertSame($storage->id, $this->markers->readMarkerId($newRoot));
+    }
+
+    public function testConfirmedRelocationTakesTheIconBackFromTheOldRoot(): void
+    {
+        $oldRoot = $this->makeDir();
+        $newRoot = $this->makeDir();
+        mkdir($newRoot.'/Trigun');
+        $storage = $this->newStorage($oldRoot, withMarker: true);
+        $icons = new StorageIconService($this->markers, new AutorunInfReader(), \dirname(__DIR__, 4).'/resources/storage-icons');
+        $icons->apply($storage);
+        $this->assertFileExists($oldRoot.'/animedb-folder.ico');
+        copy($oldRoot.'/desktop.ini', $newRoot.'/desktop.ini');
+        $anime = $this->newAnime();
+
+        $result = $this->newService(\dirname(__DIR__, 4).'/resources/storage-icons')->link($anime, $newRoot.'/Trigun', $storage->id);
+
+        $this->assertSame(ManualLinkStatus::Linked, $result->status);
+        $this->assertSame([], glob($oldRoot.'/*') ?: []);
+        $this->assertFileDoesNotExist($oldRoot.'/desktop.ini');
     }
 
     public function testRelocationIsRefusedWhileDownloadsTargetTheStorage(): void
