@@ -616,4 +616,13 @@ function getWorkerContext() {
     return liveContext ? { ...liveContext.phpContext, appPort: liveContext.frankenphpPort } : null;
 }
 
-module.exports = { start, stop, killSync, reloadForPlugin, reloadForPlugins, getWorkerContext, events, TOTAL_STEPS, WORKERS_RELOAD_EVENT };
+/**
+ * The port FrankenPHP listens on right now, or null while it is down (issue #871).
+ *
+ * @returns {number | null}
+ */
+function getFrankenphpPort() {
+    return currentFrankenphpPort;
+}
+
+module.exports = { start, stop, killSync, getFrankenphpPort, reloadForPlugin, reloadForPlugins, getWorkerContext, events, TOTAL_STEPS, WORKERS_RELOAD_EVENT };

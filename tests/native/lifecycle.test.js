@@ -63,6 +63,7 @@ jest.mock('../../native/supervisor', () => ({
     stop:               jest.fn(() => Promise.resolve()),
     killSync:           jest.fn(),
     reloadForPlugin:    jest.fn(() => Promise.resolve()),
+    getFrankenphpPort:  jest.fn(() => 8000),
     WORKERS_RELOAD_EVENT: 'workers.reload',
     events:             { on: jest.fn() },
 }));
@@ -145,7 +146,7 @@ function loadLifecycle() {
         focus:       jest.fn(),
         restore:     jest.fn(),
         on:          jest.fn(),
-        webContents: { send: jest.fn() },
+        webContents: { send: jest.fn(), once: jest.fn(), }, loadURL: jest.fn(),
     };
     createWindow.mockReturnValue(fakeWindow);
 
@@ -169,6 +170,54 @@ function loadLifecycle() {
 
 afterEach(() => {
     jest.restoreAllMocks();
+});
+
+describe('Explorer launch (issue #1122)', () => {
+    test('the lock carries the path from the raw argv as additionalData', () => {
+        const argv = process.argv;
+        process.argv = ['AnimeDB.exe', '--explorer-open=D:"'];
+        try {
+            const { app } = loadLifecycle();
+            expect(app.requestSingleInstanceLock).toHaveBeenCalledWith({ explorerOpen: 'D:\\' });
+        } finally {
+            process.argv = argv;
+        }
+    });
+
+    test('second-instance reads the path from additionalData, not from argv, and opens it after load', async () => {
+        const { appHandlers, fakeWindow, supervisor } = loadLifecycle();
+        await new Promise((r) => setTimeout(r, 500));
+        supervisor.getFrankenphpPort.mockReturnValue(9001);
+
+        appHandlers['second-instance']({}, ['x', '--explorer-open=C:\\wrong'], '/', { explorerOpen: 'C:\\Video' });
+        expect(fakeWindow.loadURL).not.toHaveBeenCalled();
+
+        const onLoad = fakeWindow.webContents.once.mock.calls.find(c => c[0] === 'did-finish-load')[1];
+        onLoad();
+
+        expect(fakeWindow.loadURL).toHaveBeenCalledWith(
+            'http://127.0.0.1:9001/explorer/open?path=C%3A%5CVideo',
+            { extraHeaders: 'X-AnimeDB-Shell: 1\n' },
+        );
+    });
+
+    test('chdir to the exe directory happens on Windows only', () => {
+        const chdir = jest.spyOn(process, 'chdir').mockImplementation(() => {});
+        const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+
+        Object.defineProperty(process, 'platform', { value: 'win32' });
+        try {
+            loadLifecycle();
+            expect(chdir).toHaveBeenCalledTimes(1);
+            expect(chdir).toHaveBeenCalledWith(require('path').dirname(process.execPath));
+        } finally {
+            Object.defineProperty(process, 'platform', platform);
+        }
+
+        chdir.mockClear();
+        loadLifecycle();
+        expect(chdir).not.toHaveBeenCalled();
+    });
 });
 
 describe('single-instance lock', () => {

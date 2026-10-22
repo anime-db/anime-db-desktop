@@ -21,6 +21,7 @@
 
 'use strict';
 
+const path = require('path');
 const { app, dialog, session, Notification } = require('electron');
 require('../protocols/app-media');
 require('../accept-language');
@@ -47,6 +48,7 @@ const { logCrash }     = require('../crash-log');
 const { getLocale, getSystemNotifications } = require('../config');
 const notifications    = require('../notifications');
 const i18n             = require('../i18n');
+const explorerOpen     = require('../explorer-open');
 const { MigrationBootstrapError } = require('../supervisor/migrations');
 const { CacheInvalidationError } = require('../supervisor/cache-invalidation');
 
@@ -205,7 +207,21 @@ function relaunch() {
     app.quit();
 }
 
-const gotLock = app.requestSingleInstanceLock();
+// An Explorer-launched process inherits the cwd of the folder it was started from; on a removable
+// drive that makes Windows refuse to eject it while the app lives in the tray (issue #1122).
+if (process.platform === 'win32') {
+    process.chdir(path.dirname(process.execPath));
+}
+
+// A second instance forwards its own raw argv path: the argv Chromium hands to 'second-instance'
+// may be reordered, so it is not trusted.
+const launchPath = explorerOpen.parseExplorerOpenArg(process.argv);
+const gotLock = app.requestSingleInstanceLock({ explorerOpen: launchPath });
+
+const explorerNav = explorerOpen.createExplorerOpen({
+    getPort:   () => supervisor.getFrankenphpPort(),
+    getWindow: () => mainWindow,
+});
 
 if (!gotLock) {
     // Уже запущен другой экземпляр — этот выходит немедленно, не трогая его дочерние процессы.
@@ -216,7 +232,12 @@ if (!gotLock) {
      * второй копии — Electron сам перенаправляет вызов сюда, во второй процесс, благодаря
      * requestSingleInstanceLock() выше (issue #390).
      */
-    app.on('second-instance', () => {
+    app.on('second-instance', (event, argv, workingDirectory, additionalData) => {
+        const requested = additionalData && typeof additionalData.explorerOpen === 'string'
+            ? additionalData.explorerOpen
+            : null;
+        // Stored until the window has loaded when it does not exist yet (cold start, splash).
+        explorerNav.request(requested);
         if (!mainWindow) return;
         if (mainWindow.isMinimized()) mainWindow.restore();
         mainWindow.show();
@@ -306,6 +327,9 @@ if (!gotLock) {
             }
 
             mainWindow = createWindow(frankenphpPort);
+
+            mainWindow.webContents.once('did-finish-load', () => explorerNav.markReady());
+            explorerNav.request(launchPath);
 
             mainWindow.on('close', (e) => {
                 if (!quitting) {
