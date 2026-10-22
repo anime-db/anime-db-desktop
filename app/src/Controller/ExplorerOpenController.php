@@ -82,14 +82,15 @@ final class ExplorerOpenController
             return new Response('', Response::HTTP_FORBIDDEN);
         }
 
-        $location = $this->locator->locate((string) $request->query->get('path', ''));
+        $selectedPath = trim((string) $request->query->get('path', ''));
+        $location = $this->locator->locate($selectedPath);
 
         if ($location->kind === StorageLocationKind::InvalidPath) {
             return $this->storageListWithError($request);
         }
 
         if ($location->kind === StorageLocationKind::Outside) {
-            return $this->redirectTo('storage_new', ['path' => $location->suggestedStoragePath]);
+            return $this->redirectTo('storage_new', ['path' => $selectedPath]);
         }
 
         $storage = $location->storage ?? throw new \LogicException('A found location always names its storage.');
