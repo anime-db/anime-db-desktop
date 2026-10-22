@@ -29,6 +29,8 @@ namespace App\Tests\Unit\Twig;
 
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
+use App\Service\Storage\Scan\ScanRun;
+use App\Service\Storage\Scan\ScanRunStatus;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -109,6 +111,65 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
         self::assertStringContainsString('action="/storage/1/scan"', $html);
         self::assertStringNotContainsString('action="/storage/2/scan"', $html);
         self::assertStringNotContainsString('action="/storage/3/scan"', $html);
+    }
+
+    /**
+     * @param array<string, mixed> $lastScan
+     */
+    private function renderListWithLastScan(array $lastScan): string
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/storage');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+
+        return $twig->render('storage/list.html.twig', [
+            'storages' => [$this->makeStorage('Folder', 1)],
+            'unavailableStorageIds' => [],
+            'presetStorageId' => null,
+            'error' => null,
+            'lastScans' => [1 => $lastScan + ['run' => null, 'needsDecision' => 0, 'running' => false, 'failedRun' => null]],
+        ]);
+    }
+
+    private function scanRun(ScanRunStatus $status): ScanRun
+    {
+        return new ScanRun(3, 1, new \DateTimeImmutable('@1000'), new \DateTimeImmutable('@1060'), $status, null, [], []);
+    }
+
+    public function testStorageListShowsRunningScanAsInfoBadgeLinkToProgress(): void
+    {
+        $html = $this->renderListWithLastScan(['running' => true]);
+
+        self::assertMatchesRegularExpression('#<a href="/storage/1/scan[^"]*" class="badge text-bg-info [^"]*">#', $html);
+    }
+
+    #[DataProvider('failedScanBadgeProvider')]
+    public function testStorageListShowsFailedScanAsBadge(ScanRunStatus $status, string $color): void
+    {
+        $html = $this->renderListWithLastScan(['failedRun' => $this->scanRun($status)]);
+
+        self::assertMatchesRegularExpression('#<span class="badge '.$color.' text-wrap text-start">#', $html);
+        self::assertStringNotContainsString('text-danger-emphasis', $html);
+    }
+
+    /**
+     * @return iterable<string, array{ScanRunStatus, string}>
+     */
+    public static function failedScanBadgeProvider(): iterable
+    {
+        yield 'failed' => [ScanRunStatus::Failed, 'text-bg-danger'];
+        yield 'marker_conflict' => [ScanRunStatus::MarkerConflict, 'text-bg-danger'];
+        yield 'interrupted' => [ScanRunStatus::Interrupted, 'text-bg-secondary'];
+    }
+
+    public function testStorageListShowsNeedsDecisionAsWarningBadge(): void
+    {
+        $html = $this->renderListWithLastScan(['run' => $this->scanRun(ScanRunStatus::Done), 'needsDecision' => 2]);
+
+        self::assertMatchesRegularExpression('#<span class="badge text-bg-warning text-wrap text-start">#', $html);
+        self::assertStringNotContainsString('text-warning-emphasis', $html);
     }
 
     public function testStorageNewHasCancelButtonToTheListInsteadOfSkipLink(): void
