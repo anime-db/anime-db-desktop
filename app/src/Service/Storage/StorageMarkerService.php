@@ -29,6 +29,8 @@ namespace App\Service\Storage;
 
 use App\Entity\Storage;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Identifies which Storage a filesystem path belongs to via a `desktop.ini` marker in its
@@ -53,6 +55,7 @@ final class StorageMarkerService
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly ?iterable $driveRoots = null,
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -60,12 +63,20 @@ final class StorageMarkerService
      * Reconciles the marker at $storage's own path: no marker means this path is now claimed by
      * $storage; a marker already carrying $storage's id is left alone; a marker pointing at a
      * deleted Storage is rewritten (the path is free); a marker pointing at another existing
-     * Storage means the path is occupied and scanning it must be skipped.
+     * Storage means the path is occupied and scanning it must be skipped. A desktop.ini that
+     * cannot be parsed is left untouched (Unreadable).
      */
     public function reconcile(Storage $storage): StorageMarkerResult
     {
         $id = $storage->id ?? throw new \LogicException('Storage must be persisted before its marker can be reconciled');
         $path = $storage->requirePath();
+
+        if ($this->isUnreadable($this->markerPath($path))) {
+            $this->logger->warning('Storage marker file cannot be parsed, leaving it untouched', ['path' => $this->markerPath($path)]);
+
+            return StorageMarkerResult::Unreadable;
+        }
+
         $markerId = $this->readMarkerId($path);
 
         if ($markerId === null) {
@@ -128,16 +139,15 @@ final class StorageMarkerService
         }
 
         $markerPath = $this->markerPath($path);
-        $sections = $this->readSections($markerPath);
-        unset($sections[self::SECTION]);
+        $remaining = $this->withoutMarkerSection((string) file_get_contents($markerPath));
 
-        if ($sections === []) {
+        if (trim($remaining) === '') {
             unlink($markerPath);
 
             return;
         }
 
-        file_put_contents($markerPath, $this->serializeIni($sections));
+        $this->writeFile($markerPath, $remaining);
     }
 
     /**
@@ -211,18 +221,29 @@ final class StorageMarkerService
     private function writeMarker(string $storagePath, int $id): void
     {
         $markerPath = $this->markerPath($storagePath);
+        $content = is_file($markerPath) ? (string) file_get_contents($markerPath) : '';
 
-        $sections = $this->readSections($markerPath);
-        $sections[self::SECTION] = ['id' => $id];
+        $this->writeFile($markerPath, $this->withMarkerId($content, $id));
+    }
 
-        file_put_contents($markerPath, $this->serializeIni($sections));
-
-        // The app only ships for Windows (see .claude-docs/architecture.md); the test suite
-        // also runs on ubuntu-latest CI (.github/workflows/ci.yml), where `attrib` doesn't
-        // exist and hiding the file has no meaning, so this is skipped there.
-        if (\PHP_OS_FAMILY === 'Windows') {
-            exec('attrib +H '.escapeshellarg($markerPath));
+    /**
+     * True when desktop.ini exists but cannot be safely read back: PHP's ini grammar rejects it
+     * (parse_ini_file() === false — e.g. keys with parentheses, reserved words as keys) or it is
+     * UTF-16 (BOM), which PHP would misread as garbage keys. Such a file is never written to.
+     */
+    private function isUnreadable(string $markerPath): bool
+    {
+        if (!is_file($markerPath)) {
+            return false;
         }
+
+        $content = @file_get_contents($markerPath);
+
+        if ($content === false || str_starts_with($content, "\xFF\xFE") || str_starts_with($content, "\xFE\xFF")) {
+            return true;
+        }
+
+        return @parse_ini_file($markerPath, true, \INI_SCANNER_RAW) === false;
     }
 
     /** @return array<string, array<string, mixed>> */
@@ -237,22 +258,121 @@ final class StorageMarkerService
         return $sections !== false ? $sections : [];
     }
 
-    /** @param array<string, array<string, mixed>> $sections */
-    private function serializeIni(array $sections): string
+    /** Sets `id` in the `[AnimeDB]` section of $content, editing line by line so everything else stays byte-identical. */
+    private function withMarkerId(string $content, int $id): string
     {
-        $lines = [];
+        $eol = str_contains($content, "\r\n") ? "\r\n" : "\n";
+        $lines = $content === '' ? [] : preg_split('/\r\n|\n|\r/', $content);
+        \assert(\is_array($lines));
+        $range = $this->sectionRange($lines);
 
-        foreach ($sections as $section => $values) {
-            $lines[] = "[$section]";
-
-            foreach ($values as $key => $value) {
-                $lines[] = "$key=$value";
+        if ($range === null) {
+            if ($lines !== [] && end($lines) === '') {
+                array_pop($lines);
             }
-
+            $lines[] = '['.self::SECTION.']';
+            $lines[] = "id=$id";
             $lines[] = '';
+
+            return implode($eol, $lines);
         }
 
-        return implode("\n", $lines);
+        [$start, $end] = $range;
+        for ($i = $start + 1; $i < $end; ++$i) {
+            if (preg_match('/^\s*id\s*=/i', $lines[$i]) === 1) {
+                $lines[$i] = "id=$id";
+
+                return implode($eol, $lines);
+            }
+        }
+
+        array_splice($lines, $start + 1, 0, ["id=$id"]);
+
+        return implode($eol, $lines);
+    }
+
+    /** Removes the `[AnimeDB]` section (header through the line before the next section) from $content. */
+    private function withoutMarkerSection(string $content): string
+    {
+        $eol = str_contains($content, "\r\n") ? "\r\n" : "\n";
+        $lines = preg_split('/\r\n|\n|\r/', $content);
+        \assert(\is_array($lines));
+        $range = $this->sectionRange($lines);
+
+        if ($range === null) {
+            return $content;
+        }
+
+        array_splice($lines, $range[0], $range[1] - $range[0]);
+
+        return implode($eol, $lines);
+    }
+
+    /**
+     * @param list<string> $lines
+     *
+     * @return ?array{int, int} [index of the `[AnimeDB]` header line, index of the next section header or line count]
+     */
+    private function sectionRange(array $lines): ?array
+    {
+        $start = null;
+
+        foreach ($lines as $i => $line) {
+            if (preg_match('/^(?:\xEF\xBB\xBF)?\s*\[([^\]]*)\]\s*(?:;.*)?$/', $line, $m) !== 1) {
+                continue;
+            }
+            if ($start !== null) {
+                return [$start, $i];
+            }
+            if (strcasecmp(trim($m[1]), self::SECTION) === 0) {
+                $start = $i;
+            }
+        }
+
+        return $start === null ? null : [$start, \count($lines)];
+    }
+
+    /**
+     * Writes $content to the marker. An existing hidden/system file refuses writes on Windows, so
+     * its attributes are lifted for the write and put back afterwards; a new file becomes hidden.
+     * A failed write is logged, never thrown.
+     */
+    private function writeFile(string $markerPath, string $content): void
+    {
+        $existed = is_file($markerPath);
+        $attributes = ['H' => !$existed, 'S' => false];
+
+        // The app only ships for Windows (see .claude-docs/architecture.md); the test suite
+        // also runs on ubuntu-latest CI (.github/workflows/ci.yml), where `attrib` doesn't
+        // exist and hiding the file has no meaning, so this is skipped there.
+        if (\PHP_OS_FAMILY === 'Windows' && $existed) {
+            $attributes = $this->readAttributes($markerPath);
+            exec('attrib -S -H '.escapeshellarg($markerPath));
+        }
+
+        $written = @file_put_contents($markerPath, $content);
+
+        if ($written === false) {
+            $this->logger->warning('Failed to write storage marker file', ['path' => $markerPath]);
+        }
+
+        if (\PHP_OS_FAMILY === 'Windows') {
+            foreach ($attributes as $flag => $set) {
+                if ($set && is_file($markerPath)) {
+                    exec("attrib +$flag ".escapeshellarg($markerPath));
+                }
+            }
+        }
+    }
+
+    /** @return array{H: bool, S: bool} */
+    private function readAttributes(string $markerPath): array
+    {
+        $output = [];
+        exec('attrib '.escapeshellarg($markerPath), $output);
+        $line = str_replace($markerPath, '', $output[0] ?? '');
+
+        return ['H' => str_contains($line, 'H'), 'S' => str_contains($line, 'S')];
     }
 
     private function markerPath(string $storagePath): string

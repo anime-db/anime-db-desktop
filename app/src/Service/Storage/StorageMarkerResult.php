@@ -40,4 +40,7 @@ enum StorageMarkerResult
 
     /** The marker carries the id of a different, still-existing Storage; the path was left untouched. */
     case Conflict;
+
+    /** desktop.ini exists but cannot be parsed; it was left untouched and no marker was written. */
+    case Unreadable;
 }
