@@ -33,7 +33,9 @@ use App\Entity\Exception\InvalidPathException;
 use App\Entity\Storage;
 use App\Service\Storage\StorageMarkerResult;
 use App\Service\Storage\StorageMarkerService;
+use App\Service\Storage\StorageNameHinter;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -60,6 +62,7 @@ final class StorageNewController
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
+        private readonly StorageNameHinter $nameHinter,
     ) {
     }
 
@@ -67,7 +70,26 @@ final class StorageNewController
     public function new(Request $request): Response
     {
         // Prefilled by the "create storage" link of an entry's Files block (issue #997).
-        return $this->renderForm(path: (string) $request->query->get('path', ''));
+        $path = (string) $request->query->get('path', '');
+        // An unverified GET must not reach the filesystem or spawn a process (a drive root is
+        // looked up only for the shell); the form's JS asks the guarded endpoint for that hint.
+        $hint = $path === '' ? null : $this->nameHinter->hint($path, ShellRequestGuard::isShellRequest($request));
+
+        return $this->renderForm(name: $hint ?? '', path: $path, nameHint: $hint);
+    }
+
+    /**
+     * Suggested storage name for a path, as `{name: string|null}`. Only the desktop shell's own
+     * window may ask (see {@see ShellRequestGuard}), and the check is the first thing done here.
+     */
+    #[Route('/storage/new/name-hint', name: 'storage_new_name_hint', methods: ['GET'])]
+    public function nameHint(Request $request): Response
+    {
+        if (!ShellRequestGuard::isShellRequest($request)) {
+            return new Response('', Response::HTTP_FORBIDDEN);
+        }
+
+        return new JsonResponse(['name' => $this->nameHinter->hint((string) $request->query->get('path', ''))]);
     }
 
     #[Route('/storage/new', name: 'storage_create', methods: ['POST'])]
@@ -123,10 +145,12 @@ final class StorageNewController
         ?string $error = null,
         array $errorParams = [],
         ?int $existingStorageId = null,
+        ?string $nameHint = null,
     ): Response {
         return new Response($this->twig->render('storage/new.html.twig', [
             'name' => $name,
             'path' => $path,
+            'name_hint' => $nameHint,
             'type' => $type?->value,
             'error' => $error,
             'error_params' => $errorParams,

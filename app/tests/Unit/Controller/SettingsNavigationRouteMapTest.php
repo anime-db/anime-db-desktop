@@ -48,6 +48,7 @@ final class SettingsNavigationRouteMapTest extends KernelTestCase
         'storage_scan_progress',
         'settings_market_refresh_status',
         'storage_paths',
+        'storage_new_name_hint',
     ];
 
     public function testEveryGetRouteUnderSettingsAndStorageMapsToExactlyOneSidebarItem(): void

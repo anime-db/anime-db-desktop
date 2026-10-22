@@ -431,3 +431,7 @@ services:
 
     # Same read-only-package reason as the DownloadServiceInterface alias above.
     AnimeDb\PluginContracts\Media\MediaProbeInterface: '@App\Service\Media\FfprobeMediaProbe'
+
+    # Starting PowerShell is Windows-only and slow; the name hint of the new-storage form depends on
+    # this interface so tests can substitute it.
+    App\Service\Storage\VolumeProbeInterface: '@App\Service\Storage\PowerShellVolumeProbe'
