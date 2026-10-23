@@ -92,7 +92,7 @@ final class PowerShellVolumeProbeTest extends TestCase
         $command = (new PowerShellVolumeProbe(windows: true))->buildCommand('D');
 
         $this->assertIsArray($command);
-        $script = end($command);
+        $script = implode(' ', $command);
         $this->assertStringContainsString("DriveInfo]::new('D')", $script);
         $this->assertStringNotContainsString('Get-Partition', $script);
         $this->assertStringNotContainsString('Get-Disk', $script);
