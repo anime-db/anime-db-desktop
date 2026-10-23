@@ -34,6 +34,7 @@ use App\Service\Storage\AutorunInfReader;
 use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerService;
 use App\Service\Storage\StorageNameHinter;
+use App\Service\Storage\StorageTypeResolver;
 use App\Service\Storage\VolumeInfo;
 use App\Service\Storage\VolumeProbeInterface;
 use Doctrine\ORM\EntityManagerInterface;
@@ -100,6 +101,8 @@ final class StorageNewControllerTest extends TestCase
             $markerService = new StorageMarkerService($markerEntityManager);
         }
 
+        $volumeProbe ??= $this->createStub(VolumeProbeInterface::class);
+
         return new StorageNewController(
             $entityManager ?? $this->createStub(EntityManagerInterface::class),
             $markerService,
@@ -107,7 +110,8 @@ final class StorageNewControllerTest extends TestCase
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
-            new StorageNameHinter(new AutorunInfReader(), $volumeProbe ?? $this->createStub(VolumeProbeInterface::class), $this->nonexistentDriveRootFormat()),
+            new StorageNameHinter(new AutorunInfReader(), $volumeProbe, $this->nonexistentDriveRootFormat()),
+            new StorageTypeResolver($volumeProbe),
         );
     }
 
@@ -192,6 +196,76 @@ final class StorageNewControllerTest extends TestCase
         $this->createController(twig: $twig, volumeProbe: $probe)->new(Request::create('/storage/new', 'GET', ['path' => 'D:\\']));
     }
 
+    public function testNewDoesNotProbeADriveFolderWithoutShellHeader(): void
+    {
+        $probe = $this->createMock(VolumeProbeInterface::class);
+        $probe->expects($this->never())->method('probe');
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['name_hint'] === 'Anime' && $params['type'] === null && $params['type_detecting'] === true,
+            ))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig, volumeProbe: $probe)->new(Request::create('/storage/new', 'GET', ['path' => 'D:\\Anime']));
+    }
+
+    public function testNewWithAUncPathRendersFolderAsTextWithoutProbing(): void
+    {
+        $probe = $this->createMock(VolumeProbeInterface::class);
+        $probe->expects($this->never())->method('probe');
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['type'] === 'folder' && $params['type_auto'] === true && $params['type_detecting'] === false,
+            ))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig, volumeProbe: $probe)->new(
+            Request::create('/storage/new', 'GET', ['path' => '\\\\srv\\share'], server: ['HTTP_HOST' => '127.0.0.1', 'HTTP_X_ANIMEDB_SHELL' => '1']),
+        );
+    }
+
+    public function testNewWithoutAPathOrWithAPathWithoutALetterShowsTheFullChoice(): void
+    {
+        $probe = $this->createMock(VolumeProbeInterface::class);
+        $probe->expects($this->never())->method('probe');
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->exactly(2))
+            ->method('render')
+            ->with('storage/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['type'] === null && $params['type_auto'] === false && $params['type_detecting'] === false,
+            ))
+            ->willReturn('<html></html>');
+
+        $controller = $this->createController(twig: $twig, volumeProbe: $probe);
+        $controller->new(new Request());
+        $controller->new(Request::create('/storage/new', 'GET', ['path' => 'D:foo']));
+    }
+
+    public function testCreateErrorKeepsTheAutoTypeFlagWithoutProbing(): void
+    {
+        $probe = $this->createMock(VolumeProbeInterface::class);
+        $probe->expects($this->never())->method('probe');
+        $twig = $this->createMock(Environment::class);
+        $twig->expects($this->once())
+            ->method('render')
+            ->with('storage/new.html.twig', $this->callback(
+                static fn (array $params): bool => $params['type'] === 'external' && $params['type_auto'] === true && $params['type_detecting'] === false,
+            ))
+            ->willReturn('<html></html>');
+
+        $this->createController(twig: $twig, volumeProbe: $probe)->create(Request::create('/storage/new', 'POST', [
+            '_token' => 't',
+            'name' => '',
+            'path' => 'D:\\',
+            'type' => 'external',
+            'type_source' => 'auto',
+        ]));
+    }
+
     public function testNewWithoutPathLeavesNameEmpty(): void
     {
         $twig = $this->createMock(Environment::class);
@@ -227,20 +301,52 @@ final class StorageNewControllerTest extends TestCase
         $this->assertSame(403, $response->getStatusCode());
     }
 
-    public function testNameHintAnswersJsonForDriveRootAndSkipsProbeForFoldersAndShares(): void
+    public function testNameHintAnswersNameAndTypeWithOneProbeRunPerDriveRequest(): void
     {
         $server = ['HTTP_HOST' => '127.0.0.1', 'HTTP_X_ANIMEDB_SHELL' => '1'];
         $probe = $this->createMock(VolumeProbeInterface::class);
-        $probe->expects($this->once())->method('probe')->with('D')->willReturn(new VolumeInfo('Backup'));
+        $probe->expects($this->exactly(2))->method('probe')->with('D', true)->willReturn(new VolumeInfo('Backup', 'Removable', null));
+        $controller = $this->createController(volumeProbe: $probe);
+
+        $hint = static fn (string $path): string => (string) $controller
+            ->nameHint(Request::create('/storage/new/name-hint', 'GET', ['path' => $path, 'type' => '1'], server: $server))
+            ->getContent();
+
+        $this->assertSame('{"name":"Backup","type":"external"}', $hint('D:\\'));
+        $this->assertSame('{"name":"share","type":"folder"}', $hint('\\\\srv\\share'));
+        $this->assertSame('{"name":"Series","type":"external"}', $hint('D:\\Anime\\Series'));
+    }
+
+    public function testNameHintWithoutTypeRequestKeepsTheLightBehaviour(): void
+    {
+        $server = ['HTTP_HOST' => '127.0.0.1', 'HTTP_X_ANIMEDB_SHELL' => '1'];
+        $probe = $this->createMock(VolumeProbeInterface::class);
+        $probe->expects($this->once())->method('probe')->with('D', false)->willReturn(new VolumeInfo('Backup', 'Removable', 'USB'));
         $controller = $this->createController(volumeProbe: $probe);
 
         $hint = static fn (string $path): string => (string) $controller
             ->nameHint(Request::create('/storage/new/name-hint', 'GET', ['path' => $path], server: $server))
             ->getContent();
 
-        $this->assertSame('{"name":"Backup"}', $hint('D:\\'));
-        $this->assertSame('{"name":"share"}', $hint('\\\\srv\\share'));
-        $this->assertSame('{"name":"Series"}', $hint('D:\\Anime\\Series'));
+        // A drive root is probed for its label only (no bus lookup); a folder path is not probed at all.
+        $this->assertSame('{"name":"Backup","type":null}', $hint('D:\\'));
+        $this->assertSame('{"name":"Series","type":null}', $hint('D:\\Anime\\Series'));
+        $this->assertSame('{"name":"share","type":null}', $hint('\\\\srv\\share'));
+    }
+
+    public function testNameHintAnswersNullTypeWhenTheProbeFailsAndDoesNotRetry(): void
+    {
+        $probe = $this->createMock(VolumeProbeInterface::class);
+        $probe->expects($this->once())->method('probe')->willReturn(null);
+
+        $response = $this->createController(volumeProbe: $probe)->nameHint(Request::create(
+            '/storage/new/name-hint',
+            'GET',
+            ['path' => 'D:\\', 'type' => '1'],
+            server: ['HTTP_HOST' => '127.0.0.1', 'HTTP_X_ANIMEDB_SHELL' => '1'],
+        ));
+
+        $this->assertSame('{"name":null,"type":null}', $response->getContent());
     }
 
     public function testCreatePersistsStorageAndWritesMarkerForWritableType(): void

@@ -43,7 +43,18 @@
                 <input type="text" id="storage-new-name" name="name" value="{{ name }}"{% if name_hint is not null %} data-name-hint="{{ name_hint }}"{% endif %} required class="form-control">
             </div>
 
-            <div class="mb-3">
+            {# The select stays in the DOM (with its data-*) even when hidden: storage-new.js reads them and the type is posted from it. #}
+            <input type="hidden" id="storage-new-type-source" name="type_source" value="{{ type_auto ? 'auto' : '' }}">
+
+            <div id="storage-new-type-text" class="mb-3"{% if not type_auto %} hidden{% endif %}>
+                <span class="form-label d-block">{{ 'storage_new.field_type'|trans }}</span>
+                <span id="storage-new-type-name">{% if type is not null %}{{ ('storage_type.' ~ type)|trans }}{% endif %}</span>
+                <button type="button" id="storage-new-type-change" class="btn btn-link btn-sm p-0 ms-2 align-baseline">{{ 'storage_new.type_change'|trans }}</button>
+            </div>
+
+            <div id="storage-new-type-detecting" class="mb-3 text-body-secondary"{% if not type_detecting %} hidden{% endif %}>{{ 'storage_new.type_detecting'|trans }}</div>
+
+            <div id="storage-new-type-choice" class="mb-3"{% if type_auto or type_detecting %} hidden{% endif %}>
                 <label for="storage-new-type" class="form-label">{{ 'storage_new.field_type'|trans }}</label>
                 <select id="storage-new-type" name="type" data-writable-types="{{ writable_types|join(',') }}" data-path-optional-types="{{ path_optional_types|join(',') }}" data-path-not-applicable-types="{{ path_not_applicable_types|join(',') }}" class="form-select">
                     {% for value in types %}

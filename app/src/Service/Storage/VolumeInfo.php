@@ -27,11 +27,15 @@ declare(strict_types=1);
 
 namespace App\Service\Storage;
 
-/** What the system knows about a mounted volume; only the label for now. */
+/** What the system knows about a mounted volume; its label, DriveType and disk bus. */
 final readonly class VolumeInfo
 {
     public function __construct(
         public ?string $label,
+        /** .NET DriveType name: `Fixed`, `Removable`, `CDRom`, `Network`, `Ram`, ... */
+        public ?string $driveType = null,
+        /** Storage BusType name of the disk under the volume: `USB`, `SATA`, `NVMe`, ...; null when unknown */
+        public ?string $busType = null,
     ) {
     }
 }

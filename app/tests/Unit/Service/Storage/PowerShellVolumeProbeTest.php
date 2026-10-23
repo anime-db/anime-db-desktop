@@ -72,12 +72,47 @@ final class PowerShellVolumeProbeTest extends TestCase
         $probe = new PowerShellVolumeProbe(windows: true, processFactory: static function (array $given) use (&$command): Process {
             $command = $given;
 
-            return new Process(['php', '-r', 'echo \'{"label":"Backup"}\';']);
+            return new Process(['php', '-r', 'echo \'{"label":"Backup","driveType":"Fixed","busType":"USB"}\';']);
         });
 
-        $this->assertSame('Backup', $probe->probe('D')?->label);
+        $volume = $probe->probe('D', true);
+        $this->assertSame('Backup', $volume?->label);
+        $this->assertSame('Fixed', $volume->driveType);
+        $this->assertSame('USB', $volume->busType);
         $this->assertIsArray($command);
         $this->assertSame('powershell', $command[0]);
-        $this->assertStringContainsString("DriveInfo]::new('D')", $command[array_key_last($command)]);
+        $script = $command[array_key_last($command)];
+        $this->assertStringContainsString("DriveInfo]::new('D')", $script);
+        $this->assertStringContainsString("Get-Partition -DriveLetter 'D' -ErrorAction Stop | Get-Disk -ErrorAction Stop", $script);
+        $this->assertSame(3, substr_count($script, 'try{'));
+    }
+
+    public function testLabelOnlyScriptDoesNotAskForTheBus(): void
+    {
+        $command = (new PowerShellVolumeProbe(windows: true))->buildCommand('D');
+
+        $this->assertIsArray($command);
+        $script = implode(' ', $command);
+        $this->assertStringContainsString("DriveInfo]::new('D')", $script);
+        $this->assertStringNotContainsString('Get-Partition', $script);
+        $this->assertStringNotContainsString('Get-Disk', $script);
+    }
+
+    public function testMissingTypeFieldsComeBackAsNull(): void
+    {
+        $probe = new PowerShellVolumeProbe(windows: true, processFactory: static fn (): Process => new Process(['php', '-r', 'echo \'{"label":null,"driveType":"Fixed","busType":null}\';']));
+
+        $volume = $probe->probe('C');
+        $this->assertNotNull($volume);
+        $this->assertNull($volume->label);
+        $this->assertSame('Fixed', $volume->driveType);
+        $this->assertNull($volume->busType);
+    }
+
+    public function testFailedRunAnswersNull(): void
+    {
+        $probe = new PowerShellVolumeProbe(windows: true, processFactory: static fn (): Process => new Process(['php', '-r', 'exit(1);']));
+
+        $this->assertNull($probe->probe('D'));
     }
 }

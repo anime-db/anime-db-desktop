@@ -283,3 +283,226 @@ describe('name hint', () => {
         expect(nameField().value).toBe('Other');
     });
 });
+
+describe('type detection', () => {
+    function setUpTypeDom(prefill = 'D:\\', { auto = false, detecting = true, name = '' } = {}) {
+        document.body.innerHTML = `
+            <form data-control="storage-new">
+                <input type="hidden" id="storage-new-type-source" name="type_source" value="${auto ? 'auto' : ''}">
+                <div id="storage-new-type-text"${auto ? '' : ' hidden'}><span id="storage-new-type-name"></span><button type="button" id="storage-new-type-change">Change</button></div>
+                <div id="storage-new-type-detecting"${detecting ? '' : ' hidden'}>Detecting</div>
+                <div id="storage-new-type-choice"${auto || detecting ? ' hidden' : ''}>
+                    <select id="storage-new-type" data-writable-types="folder,external">
+                        <option value="folder">Folder</option>
+                        <option value="external">External</option>
+                        <option value="external-r">Read-only</option>
+                        <option value="video">Video</option>
+                    </select>
+                </div>
+                <input type="text" id="storage-new-name" value="${name}">
+                <input type="text" id="storage-new-path" value="${prefill}">
+                <button type="button" id="storage-new-pick-folder" hidden></button>
+            </form>
+        `;
+    }
+
+    const el = (id) => document.getElementById(id);
+
+    function answer(body, ok = true) {
+        return Promise.resolve({ ok, json: () => Promise.resolve(body) });
+    }
+
+    function deferred() {
+        let resolve;
+        const promise = new Promise((r) => {
+            resolve = r;
+        });
+
+        return { promise, resolve };
+    }
+
+    test('an answer with a type shows it as text, selects it and sets the flag', async () => {
+        setUpTypeDom();
+        window.animeDb = { pickFolder: jest.fn() };
+        global.fetch = jest.fn(() => answer({ name: 'Backup', type: 'external' }));
+        loadStorageNewModule();
+        await flushMicrotasks();
+
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        expect(el('storage-new-type').value).toBe('external');
+        expect(el('storage-new-type-name').textContent).toBe('External');
+        expect(el('storage-new-type-text').hidden).toBe(false);
+        expect(el('storage-new-type-choice').hidden).toBe(true);
+        expect(el('storage-new-type-detecting').hidden).toBe(true);
+        expect(el('storage-new-type-source').value).toBe('auto');
+        expect(el('storage-new-name').value).toBe('Backup');
+        // The select is still in the DOM with its data-*, so the folder button follows the type.
+        expect(el('storage-new-pick-folder').hidden).toBe(false);
+    });
+
+    test('only the prefill request asks for the type', async () => {
+        setUpTypeDom();
+        global.fetch = jest.fn(() => answer({ name: 'x', type: 'external' }));
+        loadStorageNewModule();
+        await flushMicrotasks();
+
+        const path = el('storage-new-path');
+        path.value = 'D:\\Anime\\Series';
+        path.dispatchEvent(new Event('change'));
+        await flushMicrotasks();
+
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        expect(global.fetch.mock.calls[0][0]).toBe('/storage/new/name-hint?path=D%3A%5C&type=1');
+        expect(global.fetch.mock.calls[1][0]).not.toContain('type=1');
+    });
+
+    test('"Change" returns the full choice and returning to the prefill path does not override the pick', async () => {
+        setUpTypeDom();
+        global.fetch = jest.fn(() => answer({ name: null, type: 'external' }));
+        loadStorageNewModule();
+        await flushMicrotasks();
+        expect(el('storage-new-type-text').hidden).toBe(false);
+
+        el('storage-new-type-change').click();
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-text').hidden).toBe(true);
+        expect(el('storage-new-type-source').value).toBe('');
+
+        el('storage-new-type').value = 'video';
+        const path = el('storage-new-path');
+        path.value = 'C:\\Anime';
+        path.dispatchEvent(new Event('input'));
+        path.value = 'D:\\';
+        path.dispatchEvent(new Event('input'));
+
+        expect(el('storage-new-type').value).toBe('video');
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-source').value).toBe('');
+    });
+
+    test('"Change" works on a form re-rendered with a type as text', () => {
+        setUpTypeDom('\\\\srv\\share', { auto: true, detecting: false, name: 'share' });
+        loadStorageNewModule();
+
+        el('storage-new-type-change').click();
+
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-source').value).toBe('');
+    });
+
+    test('the folder button stays hidden for a type that is not writable', async () => {
+        setUpTypeDom();
+        window.animeDb = { pickFolder: jest.fn() };
+        global.fetch = jest.fn(() => answer({ name: null, type: 'external-r' }));
+        loadStorageNewModule();
+        await flushMicrotasks();
+
+        expect(el('storage-new-type').value).toBe('external-r');
+        expect(el('storage-new-pick-folder').hidden).toBe(true);
+    });
+
+    test.each([
+        ['type null', () => answer({ name: null, type: null })],
+        ['403', () => answer({}, false)],
+        ['network error', () => Promise.reject(new Error('offline'))],
+    ])('%s shows the full choice and removes the label', async (_title, respond) => {
+        setUpTypeDom();
+        global.fetch = jest.fn(respond);
+        loadStorageNewModule();
+        await flushMicrotasks();
+
+        expect(el('storage-new-type-detecting').hidden).toBe(true);
+        expect(el('storage-new-type-text').hidden).toBe(true);
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-source').value).toBe('');
+    });
+
+    test('without fetch the label does not stay forever', () => {
+        setUpTypeDom();
+        loadStorageNewModule();
+
+        expect(el('storage-new-type-detecting').hidden).toBe(true);
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+    });
+
+    test('a changed path before the answer shows the choice and a late answer does not hide it', async () => {
+        setUpTypeDom();
+        const first = deferred();
+        global.fetch = jest.fn().mockReturnValueOnce(first.promise).mockReturnValue(answer({ name: 'x', type: null }));
+        loadStorageNewModule();
+
+        typePath('E:\\Other');
+        await flushMicrotasks();
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-detecting').hidden).toBe(true);
+
+        first.resolve({ ok: true, json: () => Promise.resolve({ name: 'Backup', type: 'external' }) });
+        await flushMicrotasks();
+
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-text').hidden).toBe(true);
+        expect(el('storage-new-type-source').value).toBe('');
+    });
+
+    test('a changed path after the answer shows the choice again and returning to the prefill hides it', async () => {
+        setUpTypeDom();
+        global.fetch = jest.fn((url) => answer({ name: null, type: url.includes('E%3A') ? null : 'external' }));
+        loadStorageNewModule();
+        await flushMicrotasks();
+
+        const path = el('storage-new-path');
+        path.value = 'C:\\Anime';
+        path.dispatchEvent(new Event('input'));
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-text').hidden).toBe(true);
+        expect(el('storage-new-type-source').value).toBe('');
+
+        path.value = 'D:\\';
+        path.dispatchEvent(new Event('input'));
+        expect(el('storage-new-type-text').hidden).toBe(false);
+        expect(el('storage-new-type-choice').hidden).toBe(true);
+        expect(el('storage-new-type-source').value).toBe('auto');
+    });
+
+    test('picking another folder returns the choice although no change event fires', async () => {
+        setUpTypeDom();
+        window.animeDb = { pickFolder: jest.fn(() => Promise.resolve('C:\\Anime')) };
+        global.fetch = jest.fn(() => answer({ name: null, type: 'external' }));
+        loadStorageNewModule();
+        await flushMicrotasks();
+        expect(el('storage-new-type-text').hidden).toBe(false);
+
+        el('storage-new-pick-folder').click();
+        await flushMicrotasks();
+
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-text').hidden).toBe(true);
+        expect(el('storage-new-type-source').value).toBe('');
+    });
+
+    test('a form re-rendered with a type as text sends no request and returns the choice on a path change', async () => {
+        setUpTypeDom('\\\\srv\\share', { auto: true, detecting: false, name: 'share' });
+        global.fetch = jest.fn(() => answer({ name: null, type: null }));
+        loadStorageNewModule();
+        await flushMicrotasks();
+        expect(global.fetch).not.toHaveBeenCalled();
+        expect(el('storage-new-type-text').hidden).toBe(false);
+
+        const path = el('storage-new-path');
+        path.value = 'C:\\Anime';
+        path.dispatchEvent(new Event('input'));
+
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-source').value).toBe('');
+    });
+
+    test('a person-chosen type of a re-rendered letter path is not overridden by a request', async () => {
+        setUpTypeDom('D:\\', { auto: false, detecting: false, name: 'x' });
+        global.fetch = jest.fn(() => answer({ name: null, type: 'external' }));
+        loadStorageNewModule();
+        await flushMicrotasks();
+
+        expect(global.fetch).not.toHaveBeenCalled();
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+    });
+});

@@ -66,6 +66,88 @@
             pathInput.required = !pathOptionalTypes.includes(typeSelect.value);
         }
 
+        // Type shown as text. A type is detected for the path the form was opened with (the prefill) only;
+        // the select stays in the DOM (it carries the data-* and is posted), only its wrapper is hidden.
+        const typeText = form.querySelector('#storage-new-type-text');
+        const typeName = form.querySelector('#storage-new-type-name');
+        const typeChoice = form.querySelector('#storage-new-type-choice');
+        const typeDetecting = form.querySelector('#storage-new-type-detecting');
+        const typeSource = form.querySelector('#storage-new-type-source');
+        const typeChange = form.querySelector('#storage-new-type-change');
+        const prefillPath = pathInput.value.trim();
+        // The type known for the prefill path: rendered by the server (UNC) or taken from the endpoint's answer.
+        let autoType = typeSource && typeSource.value === 'auto' ? typeSelect.value : null;
+        let detectionPending = Boolean(typeDetecting) && !typeDetecting.hidden;
+
+        function setHidden(element, hidden) {
+            if (element) {
+                element.hidden = hidden;
+            }
+        }
+
+        function showChoice() {
+            setHidden(typeText, true);
+            setHidden(typeDetecting, true);
+            setHidden(typeChoice, false);
+            if (typeSource) {
+                typeSource.value = '';
+            }
+        }
+
+        function showAutoType(type) {
+            typeSelect.value = type;
+            if (typeName) {
+                typeName.textContent = typeSelect.selectedOptions[0] ? typeSelect.selectedOptions[0].textContent : type;
+            }
+            setHidden(typeText, false);
+            setHidden(typeDetecting, true);
+            setHidden(typeChoice, true);
+            if (typeSource) {
+                typeSource.value = 'auto';
+            }
+            updatePickButtonVisibility();
+            updatePathRequired();
+            updatePathApplicable();
+        }
+
+        // A path other than the prefill is chosen by a person, so the type is chosen by a person too.
+        function syncTypeWithPath() {
+            if (autoType === null) {
+                if (pathInput.value.trim() !== prefillPath && detectionPending) {
+                    setHidden(typeDetecting, true);
+                    setHidden(typeChoice, false);
+                }
+                return;
+            }
+            if (pathInput.value.trim() === prefillPath) {
+                showAutoType(autoType);
+            } else {
+                showChoice();
+            }
+        }
+
+        // "Change": the person takes the type over, so the detected one is dropped for good and never re-applied.
+        if (typeChange) {
+            typeChange.addEventListener('click', () => {
+                autoType = null;
+                showChoice();
+            });
+        }
+
+        function finishDetection(type) {
+            if (!detectionPending) {
+                return;
+            }
+            detectionPending = false;
+            setHidden(typeDetecting, true);
+            if (type && pathInput.value.trim() === prefillPath && typeSelect.querySelector('option[value="' + type + '"]')) {
+                autoType = type;
+                showAutoType(type);
+            } else {
+                setHidden(typeChoice, false);
+            }
+        }
+
         // Name hint (the endpoint reads a drive label, so it answers only a request with the shell header).
         const nameInput = form.querySelector('#storage-new-name');
         const hintUrl = '/storage/new/name-hint';
@@ -82,8 +164,13 @@
             lastHint = name || null;
         }
 
-        async function requestNameHint() {
+        // forPrefill: this request is the one that also asks for the type of the form's initial path.
+        // Only that request pays for the slow type lookup on the server; the hints of later path changes stay light.
+        async function requestNameHint(forPrefill = false) {
             if (!nameInput || typeof fetch !== 'function') {
+                if (forPrefill) {
+                    finishDetection(null);
+                }
                 return;
             }
 
@@ -92,28 +179,48 @@
             const requestId = hintRequestId;
             const path = pathInput.value.trim();
             let name = null;
+            let type = null;
             if (path !== '') {
                 try {
-                    const response = await fetch(hintUrl + '?path=' + encodeURIComponent(path), {
+                    const response = await fetch(hintUrl + '?path=' + encodeURIComponent(path) + (forPrefill ? '&type=1' : ''), {
                         headers: { 'X-AnimeDB-Shell': '1' },
                     });
                     if (!response.ok) {
+                        if (forPrefill) {
+                            finishDetection(null);
+                        }
                         return;
                     }
-                    name = (await response.json()).name || null;
+                    const data = await response.json();
+                    name = data.name || null;
+                    type = data.type || null;
                 } catch {
+                    if (forPrefill) {
+                        finishDetection(null);
+                    }
                     return;
                 }
+            }
+            // The type belongs to the prefill path, not to whichever request is the latest.
+            if (forPrefill) {
+                finishDetection(type);
             }
             if (requestId === hintRequestId) {
                 applyHint(name);
             }
         }
 
-        pathInput.addEventListener('change', requestNameHint);
+        pathInput.addEventListener('change', () => {
+            syncTypeWithPath();
+            requestNameHint();
+        });
+        pathInput.addEventListener('input', syncTypeWithPath);
 
-        // A prefilled path whose name the server could not suggest (a drive root needs the guarded endpoint).
-        if (nameInput && pathInput.value.trim() !== '' && nameInput.value === '') {
+        // A prefilled path with a drive letter shows "detecting" and asks the guarded endpoint for the type
+        // (and the name of a drive root, which the server cannot look up on an unverified request).
+        if (detectionPending) {
+            requestNameHint(true);
+        } else if (nameInput && pathInput.value.trim() !== '' && nameInput.value === '') {
             requestNameHint();
         }
 
@@ -132,7 +239,8 @@
             const folder = await window.animeDb.pickFolder();
             if (folder) {
                 pathInput.value = folder;
-                // Assigning the value does not fire `change`, so the hint is requested explicitly.
+                // Assigning the value does not fire `change`, so the type and the hint are updated explicitly.
+                syncTypeWithPath();
                 requestNameHint();
             }
         });

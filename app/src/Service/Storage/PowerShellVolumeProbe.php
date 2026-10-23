@@ -55,23 +55,31 @@ final class PowerShellVolumeProbe implements VolumeProbeInterface
      *
      * @return list<string>|null
      */
-    public function buildCommand(string $letter): ?array
+    public function buildCommand(string $letter, bool $withBus = false): ?array
     {
         if (preg_match('/^[A-Za-z]$/D', $letter) !== 1) {
             return null;
         }
 
+        // Each part has its own try, so a failing one (an empty card reader, no partition) leaves the others intact.
         $script = '[Console]::OutputEncoding=[Text.Encoding]::UTF8;'
-            .'$label=$null;'
+            .'$label=$null;$driveType=$null;$busType=$null;'
             ."try{\$label=[System.IO.DriveInfo]::new('".$letter."').VolumeLabel}catch{};"
-            .'ConvertTo-Json -Compress -InputObject @{label=$label}';
+            ."try{\$driveType=[string][System.IO.DriveInfo]::new('".$letter."').DriveType}catch{};";
+        // Get-Partition | Get-Disk loads the Storage module and queries CIM (seconds on a cold start), so
+        // the plain label lookup of the name hint does not pay for it.
+        if ($withBus) {
+            $script .= "try{\$busType=[string](Get-Partition -DriveLetter '".$letter."' -ErrorAction Stop"
+                .' | Get-Disk -ErrorAction Stop | Select-Object -First 1).BusType}catch{};';
+        }
+        $script .= 'ConvertTo-Json -Compress -InputObject @{label=$label;driveType=$driveType;busType=$busType}';
 
         return ['powershell', '-NoProfile', '-NonInteractive', '-Command', $script];
     }
 
-    public function probe(string $letter): ?VolumeInfo
+    public function probe(string $letter, bool $withBus = false): ?VolumeInfo
     {
-        $command = $this->windows ? $this->buildCommand($letter) : null;
+        $command = $this->windows ? $this->buildCommand($letter, $withBus) : null;
         if ($command === null) {
             return null;
         }
@@ -95,8 +103,15 @@ final class PowerShellVolumeProbe implements VolumeProbeInterface
             return null;
         }
 
-        $label = $data['label'] ?? null;
+        return new VolumeInfo(
+            $this->string($data['label'] ?? null),
+            $this->string($data['driveType'] ?? null),
+            $this->string($data['busType'] ?? null),
+        );
+    }
 
-        return new VolumeInfo(\is_string($label) ? $label : null);
+    private function string(mixed $value): ?string
+    {
+        return \is_string($value) ? $value : null;
     }
 }

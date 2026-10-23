@@ -35,6 +35,8 @@ use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerResult;
 use App\Service\Storage\StorageMarkerService;
 use App\Service\Storage\StorageNameHinter;
+use App\Service\Storage\StorageTypeResolver;
+use App\Service\Storage\VolumeInfo;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -65,6 +67,7 @@ final class StorageNewController
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
         private readonly StorageNameHinter $nameHinter,
+        private readonly StorageTypeResolver $typeResolver,
     ) {
     }
 
@@ -77,11 +80,24 @@ final class StorageNewController
         // looked up only for the shell); the form's JS asks the guarded endpoint for that hint.
         $hint = $path === '' ? null : $this->nameHinter->hint($path, ShellRequestGuard::isShellRequest($request));
 
-        return $this->renderForm(name: $hint ?? '', path: $path, nameHint: $hint);
+        // The type is not detected here for the same reason: only a UNC path, known from the string, is
+        // rendered as text at once; a path with a drive letter shows "detecting" and the form's JS asks
+        // the guarded endpoint.
+        $type = $path === '' ? null : $this->typeResolver->typeFromString($path);
+        $detecting = $path !== '' && $type === null && $this->typeResolver->driveLetter($path) !== null;
+
+        return $this->renderForm(
+            name: $hint ?? '',
+            path: $path,
+            type: $type,
+            nameHint: $hint,
+            typeAuto: $type !== null,
+            typeDetecting: $detecting,
+        );
     }
 
     /**
-     * Suggested storage name for a path, as `{name: string|null}`. Only the desktop shell's own
+     * Suggested storage name and, with `type=1`, type for a path, as `{name: string|null, type: string|null}`. Only the desktop shell's own
      * window may ask (see {@see ShellRequestGuard}), and the check is the first thing done here.
      */
     #[Route('/storage/new/name-hint', name: 'storage_new_name_hint', methods: ['GET'])]
@@ -91,7 +107,24 @@ final class StorageNewController
             return new Response('', Response::HTTP_FORBIDDEN);
         }
 
-        return new JsonResponse(['name' => $this->nameHinter->hint((string) $request->query->get('path', ''))]);
+        $path = (string) $request->query->get('path', '');
+        // The type is detected only on request (`type=1`, sent for the form's prefilled path): the probe with the
+        // bus type is slow, and the name hint of every later path change must stay as light as it was.
+        if (!$request->query->getBoolean('type')) {
+            return new JsonResponse(['name' => $this->nameHinter->hint($path, true), 'type' => null]);
+        }
+
+        // One probe run answers both the drive label and the type. A failed probe is replaced with an
+        // empty result for a drive path, so the name hinter does not start a second run.
+        $volume = $this->typeResolver->probe($path);
+        if ($volume === null && $this->typeResolver->driveLetter($path) !== null) {
+            $volume = new VolumeInfo(null);
+        }
+
+        return new JsonResponse([
+            'name' => $this->nameHinter->hint($path, true, $volume),
+            'type' => $this->typeResolver->resolve($path, $volume)?->value,
+        ]);
     }
 
     #[Route('/storage/new', name: 'storage_create', methods: ['POST'])]
@@ -102,15 +135,17 @@ final class StorageNewController
         $name = (string) $request->request->get('name', '');
         $path = (string) $request->request->get('path', '');
         $type = StorageType::tryFrom((string) $request->request->get('type', ''));
+        // The type is never detected on POST; the form only repeats how it showed a type found earlier.
+        $typeAuto = $type !== null && $request->request->get('type_source') === 'auto';
 
         if ($type === null) {
-            return $this->renderForm(name: $name, path: $path, error: 'storage_new.error_invalid');
+            return $this->renderForm(name: $name, path: $path, error: 'storage_new.error_invalid', typeAuto: $typeAuto);
         }
 
         try {
             $storage = new Storage($name, $path, $type);
         } catch (InvalidNameException|InvalidPathException) {
-            return $this->renderForm(name: $name, path: $path, type: $type, error: 'storage_new.error_invalid');
+            return $this->renderForm(name: $name, path: $path, type: $type, error: 'storage_new.error_invalid', typeAuto: $typeAuto);
         }
 
         $this->entityManager->persist($storage);
@@ -133,6 +168,7 @@ final class StorageNewController
                 error: 'storage_new.error_already_connected',
                 errorParams: ['%name%' => $owner?->getName() ?? ''],
                 existingStorageId: $owner?->id,
+                typeAuto: $typeAuto,
             );
         }
 
@@ -154,12 +190,16 @@ final class StorageNewController
         array $errorParams = [],
         ?int $existingStorageId = null,
         ?string $nameHint = null,
+        bool $typeAuto = false,
+        bool $typeDetecting = false,
     ): Response {
         return new Response($this->twig->render('storage/new.html.twig', [
             'name' => $name,
             'path' => $path,
             'name_hint' => $nameHint,
             'type' => $type?->value,
+            'type_auto' => $typeAuto,
+            'type_detecting' => $typeDetecting,
             'error' => $error,
             'error_params' => $errorParams,
             'existing_storage_id' => $existingStorageId,
