@@ -61,10 +61,14 @@ final class PowerShellVolumeProbe implements VolumeProbeInterface
             return null;
         }
 
+        // Each part has its own try, so a failing one (an empty card reader, no partition) leaves the others intact.
         $script = '[Console]::OutputEncoding=[Text.Encoding]::UTF8;'
-            .'$label=$null;'
+            .'$label=$null;$driveType=$null;$busType=$null;'
             ."try{\$label=[System.IO.DriveInfo]::new('".$letter."').VolumeLabel}catch{};"
-            .'ConvertTo-Json -Compress -InputObject @{label=$label}';
+            ."try{\$driveType=[string][System.IO.DriveInfo]::new('".$letter."').DriveType}catch{};"
+            ."try{\$busType=[string](Get-Partition -DriveLetter '".$letter."' -ErrorAction Stop"
+            .' | Get-Disk -ErrorAction Stop | Select-Object -First 1).BusType}catch{};'
+            .'ConvertTo-Json -Compress -InputObject @{label=$label;driveType=$driveType;busType=$busType}';
 
         return ['powershell', '-NoProfile', '-NonInteractive', '-Command', $script];
     }
@@ -95,8 +99,15 @@ final class PowerShellVolumeProbe implements VolumeProbeInterface
             return null;
         }
 
-        $label = $data['label'] ?? null;
+        return new VolumeInfo(
+            $this->string($data['label'] ?? null),
+            $this->string($data['driveType'] ?? null),
+            $this->string($data['busType'] ?? null),
+        );
+    }
 
-        return new VolumeInfo(\is_string($label) ? $label : null);
+    private function string(mixed $value): ?string
+    {
+        return \is_string($value) ? $value : null;
     }
 }

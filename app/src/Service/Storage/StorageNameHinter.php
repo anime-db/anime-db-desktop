@@ -48,15 +48,16 @@ final class StorageNameHinter
     }
 
     /**
-     * @param bool $touchDrive whether a drive root may be looked up on disk; false for a request
-     *                         that did not come from the desktop shell (see ShellRequestGuard)
+     * @param bool            $touchDrive whether a drive root may be looked up on disk; false for a request
+     *                                    that did not come from the desktop shell (see ShellRequestGuard)
+     * @param VolumeInfo|null $volume     the already probed volume of the path, so a drive root is not probed twice
      */
-    public function hint(string $path, bool $touchDrive = true): ?string
+    public function hint(string $path, bool $touchDrive = true, ?VolumeInfo $volume = null): ?string
     {
         $path = trim($path);
 
         if (preg_match(self::DRIVE_ROOT_PATTERN, $path, $matches) === 1) {
-            return $touchDrive ? $this->driveRootName($matches[1]) : null;
+            return $touchDrive ? $this->driveRootName($matches[1], $volume) : null;
         }
 
         $segments = array_values(array_filter(
@@ -74,7 +75,7 @@ final class StorageNameHinter
         return $name === false || preg_match('/^[A-Za-z]:$/', $name) === 1 ? null : $name;
     }
 
-    private function driveRootName(string $letter): ?string
+    private function driveRootName(string $letter, ?VolumeInfo $volume): ?string
     {
         $file = sprintf($this->driveRootFormat, strtoupper($letter)).'autorun.inf';
         if (is_file($file)) {
@@ -85,7 +86,7 @@ final class StorageNameHinter
             }
         }
 
-        $label = $this->volumeProbe->probe($letter)?->label;
+        $label = ($volume ?? $this->volumeProbe->probe($letter))?->label;
         if ($label === null) {
             return null;
         }

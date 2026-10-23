@@ -767,6 +767,7 @@ storage_new:
     error_already_connected: 'This folder is already connected as storage "%name%".'
     existing_storage_link: Open storage
     cancel_button: Cancel
+    type_detecting: Detecting type…
 
 storage_scan_prompt:
     title: Run a scan? — AnimeDB

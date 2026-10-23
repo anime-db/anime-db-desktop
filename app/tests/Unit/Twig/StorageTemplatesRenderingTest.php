@@ -185,6 +185,8 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
             'path' => '',
             'type' => null,
             'error' => null,
+            'type_auto' => false,
+            'type_detecting' => false,
             'types' => ['folder'],
             'path_optional_types' => [],
             'path_not_applicable_types' => [],
@@ -365,6 +367,8 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
             'path' => '/some/path',
             'type' => $type,
             'error' => null,
+            'type_auto' => false,
+            'type_detecting' => false,
             'types' => array_column(StorageType::cases(), 'value'),
             'path_optional_types' => ['external-r', 'video'],
             'path_not_applicable_types' => ['video'],
@@ -377,6 +381,53 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
         self::assertSame($disabled, !str_contains($input, '/some/path'));
         $hint = self::firstMatch('/<div id="storage-new-path-not-applicable"[^>]*>/', $html);
         self::assertSame($hintVisible, !str_contains($hint, 'hidden'));
+    }
+
+    /** @return array<string, array{bool, bool, bool, bool, bool}> auto, detecting, text hidden, choice hidden, detecting hidden */
+    public static function typeDisplayProvider(): array
+    {
+        return [
+            'full choice' => [false, false, true, false, true],
+            'detecting' => [false, true, true, true, false],
+            'type as text' => [true, false, false, true, true],
+        ];
+    }
+
+    #[DataProvider('typeDisplayProvider')]
+    public function testStorageNewTypeDisplayKeepsTheSelectInTheDom(bool $auto, bool $detecting, bool $textHidden, bool $choiceHidden, bool $detectingHidden): void
+    {
+        self::bootKernel();
+        $this->pushRequestWithSession('/storage/new');
+
+        /** @var Environment $twig */
+        $twig = self::getContainer()->get('twig');
+        $html = $twig->render('storage/new.html.twig', [
+            'name' => '',
+            'name_hint' => null,
+            'path' => 'D:\\',
+            'type' => $auto ? 'external' : null,
+            'error' => null,
+            'type_auto' => $auto,
+            'type_detecting' => $detecting,
+            'types' => array_column(StorageType::cases(), 'value'),
+            'path_optional_types' => ['external-r', 'video'],
+            'path_not_applicable_types' => ['video'],
+            'writable_types' => ['folder', 'external'],
+        ]);
+
+        $isHidden = static fn (string $id): bool => str_contains(self::firstMatch('/<[^>]*id="'.$id.'"[^>]*>/', $html), ' hidden');
+        self::assertSame($textHidden, $isHidden('storage-new-type-text'));
+        self::assertSame($choiceHidden, $isHidden('storage-new-type-choice'));
+        self::assertSame($detectingHidden, $isHidden('storage-new-type-detecting'));
+
+        $select = self::firstMatch('/<select[^>]*id="storage-new-type"[^>]*>/', $html);
+        self::assertStringContainsString('data-writable-types="folder,external"', $select);
+        self::assertStringContainsString('data-path-optional-types=', $select);
+        self::assertStringNotContainsString('disabled', $select);
+        self::assertStringContainsString($auto ? 'value="auto"' : 'value=""', self::firstMatch('/<input[^>]*id="storage-new-type-source"[^>]*>/', $html));
+        if ($auto) {
+            self::assertStringContainsString('<span id="storage-new-type-name">External</span>', $html);
+        }
     }
 
     private static function firstMatch(string $pattern, string $subject): string
