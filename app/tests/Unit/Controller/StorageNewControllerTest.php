@@ -31,6 +31,7 @@ use App\Controller\StorageNewController;
 use App\Entity\Enum\StorageType;
 use App\Entity\Storage;
 use App\Service\Storage\AutorunInfReader;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerService;
 use App\Service\Storage\StorageNameHinter;
 use App\Service\Storage\VolumeInfo;
@@ -56,6 +57,9 @@ final class StorageNewControllerTest extends TestCase
             if (is_file($marker)) {
                 unlink($marker);
             }
+            foreach (glob($dir.\DIRECTORY_SEPARATOR.'animedb-*.ico') ?: [] as $icon) {
+                unlink($icon);
+            }
             if (is_dir($dir)) {
                 rmdir($dir);
             }
@@ -78,6 +82,7 @@ final class StorageNewControllerTest extends TestCase
         ?UrlGeneratorInterface $urlGenerator = null,
         ?Environment $twig = null,
         ?VolumeProbeInterface $volumeProbe = null,
+        string $iconsDir = '/nonexistent-storage-icons',
     ): StorageNewController {
         if ($csrfTokenManager === null) {
             $csrfTokenManager = $this->createStub(CsrfTokenManagerInterface::class);
@@ -98,6 +103,7 @@ final class StorageNewControllerTest extends TestCase
         return new StorageNewController(
             $entityManager ?? $this->createStub(EntityManagerInterface::class),
             $markerService,
+            new StorageIconService($markerService, new AutorunInfReader(), $iconsDir),
             $csrfTokenManager,
             $urlGenerator,
             $twig ?? $this->createStub(Environment::class),
@@ -257,6 +263,23 @@ final class StorageNewControllerTest extends TestCase
         $marker = parse_ini_file($dir.\DIRECTORY_SEPARATOR.'desktop.ini', true, \INI_SCANNER_RAW);
         $this->assertIsArray($marker);
         $this->assertSame('7', $marker['AnimeDB']['id']);
+    }
+
+    public function testCreateAppliesTheIconToTheNewStorageRoot(): void
+    {
+        $dir = $this->makeDir();
+        $persistedStorage = null;
+        $entityManager = $this->entityManagerAssigningId(7, $persistedStorage);
+
+        $this->createController(entityManager: $entityManager, iconsDir: __DIR__.'/../../../resources/storage-icons')->create(Request::create('/storage/new', 'POST', [
+            'name' => 'Main folder',
+            'path' => $dir,
+            'type' => 'folder',
+            '_token' => 'token',
+        ]));
+
+        $this->assertFileExists($dir.\DIRECTORY_SEPARATOR.'animedb-folder.ico');
+        $this->assertStringContainsString('IconResource=animedb-folder.ico,0', (string) file_get_contents($dir.\DIRECTORY_SEPARATOR.'desktop.ini'));
     }
 
     public function testCreateRedirectsToScanPromptWithNewStorageId(): void

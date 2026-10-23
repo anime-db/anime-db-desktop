@@ -52,6 +52,7 @@ use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\InstalledPluginsRegistry;
 use App\Service\Plugin\PluginDisplayName;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Storage\AutorunInfReader;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
 use App\Service\Storage\Scan\ScanCandidate;
@@ -59,6 +60,7 @@ use App\Service\Storage\Scan\ScanResultItem;
 use App\Service\Storage\Scan\ScanRunJournal;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\SearchByPluginChain;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerService;
 use App\Service\WsPublisher;
 use App\Tests\Support\RecordingNotificationCenter;
@@ -887,6 +889,7 @@ final class ScanStorageMessageHandlerTest extends TestCase
 
         $scanStorageService = new ScanStorageService(
             $storageMarkerService,
+            new StorageIconService($storageMarkerService, new AutorunInfReader(), '/nonexistent-storage-icons'),
             new FilenameCleaner(),
             new OrphanAnimeMatcher($animeRepository),
             new SearchByPluginChain([], new PluginsConfigStore(''), new \App\Service\Plugin\DefaultSearchPluginRegistry([], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class))),

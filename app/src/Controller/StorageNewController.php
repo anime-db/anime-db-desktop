@@ -31,6 +31,7 @@ use App\Entity\Enum\StorageType;
 use App\Entity\Exception\InvalidNameException;
 use App\Entity\Exception\InvalidPathException;
 use App\Entity\Storage;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerResult;
 use App\Service\Storage\StorageMarkerService;
 use App\Service\Storage\StorageNameHinter;
@@ -59,6 +60,7 @@ final class StorageNewController
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly StorageMarkerService $markerService,
+        private readonly StorageIconService $iconService,
         private readonly CsrfTokenManagerInterface $csrfTokenManager,
         private readonly UrlGeneratorInterface $urlGenerator,
         private readonly Environment $twig,
@@ -114,7 +116,9 @@ final class StorageNewController
         $this->entityManager->persist($storage);
         $this->entityManager->flush();
 
-        if ($type->isWritable() && $this->markerService->reconcile($storage) === StorageMarkerResult::Conflict) {
+        $marker = $type->isWritable() ? $this->markerService->reconcile($storage) : null;
+
+        if ($marker === StorageMarkerResult::Conflict) {
             // The folder already carries another storage's marker: this row would be a duplicate
             // that reports marker_conflict on every scan, so it is not kept (issue #997).
             $ownerId = $this->markerService->readMarkerId($storage->requirePath());
@@ -130,6 +134,10 @@ final class StorageNewController
                 errorParams: ['%name%' => $owner?->getName() ?? ''],
                 existingStorageId: $owner?->id,
             );
+        }
+
+        if ($marker !== null && $marker->ownsPath()) {
+            $this->iconService->apply($storage);
         }
 
         $storageId = $storage->id ?? throw new \LogicException('Storage must be assigned an id right after flush().');

@@ -49,10 +49,12 @@ use App\Service\Plugin\Filler\PluginAnimeDataMerger;
 use App\Service\Plugin\Filler\PluginMediaDownloaderInterface;
 use App\Service\Plugin\FillerRegistry;
 use App\Service\Plugin\PluginsConfigStore;
+use App\Service\Storage\AutorunInfReader;
 use App\Service\Storage\FilenameCleaner;
 use App\Service\Storage\OrphanAnimeMatcher;
 use App\Service\Storage\ScanStorageService;
 use App\Service\Storage\Search\SearchByPluginChain;
+use App\Service\Storage\StorageIconService;
 use App\Service\Storage\StorageMarkerService;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Type;
@@ -128,6 +130,7 @@ final class StorageScanConfirmControllerTest extends TestCase
         $animeRepository ??= new AnimeRepository($this->entityManager);
         $scanStorageService = new ScanStorageService(
             new StorageMarkerService($this->entityManager),
+            new StorageIconService(new StorageMarkerService($this->entityManager), new AutorunInfReader(), '/nonexistent-storage-icons'),
             new FilenameCleaner(),
             new OrphanAnimeMatcher($animeRepository),
             new SearchByPluginChain([], new PluginsConfigStore(''), new \App\Service\Plugin\DefaultSearchPluginRegistry([], new PluginsConfigStore(''), $this->createStub(\App\Service\AppSettingsProvider::class))),

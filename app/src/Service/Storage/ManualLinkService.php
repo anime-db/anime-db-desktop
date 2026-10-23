@@ -56,6 +56,7 @@ final class ManualLinkService
         private readonly DownloadRepository $downloads,
         private readonly StorageLocator $locator,
         private readonly StorageMarkerService $markerService,
+        private readonly StorageIconService $iconService,
         private readonly JobLockService $jobLock,
         private readonly EntityManagerInterface $entityManager,
         private readonly EventDispatcherInterface $eventDispatcher,
@@ -143,6 +144,7 @@ final class ManualLinkService
             } catch (InvalidPathException) {
                 return ManualLinkResult::refused(ManualLinkStatus::InvalidPath, $storage);
             }
+            $this->iconService->remove($storage, $previousPath);
             $this->markerService->forget($storage, $previousPath);
         }
 
