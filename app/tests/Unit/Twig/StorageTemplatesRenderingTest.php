@@ -428,6 +428,10 @@ final class StorageTemplatesRenderingTest extends KernelTestCase
         if ($auto) {
             self::assertStringContainsString('<span id="storage-new-type-name">External</span>', $html);
         }
+        self::assertMatchesRegularExpression(
+            '/<div id="storage-new-type-text"[^>]*>.*<button type="button" id="storage-new-type-change"/s',
+            $html,
+        );
     }
 
     private static function firstMatch(string $pattern, string $subject): string
