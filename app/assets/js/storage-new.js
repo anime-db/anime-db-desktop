@@ -73,6 +73,7 @@
         const typeChoice = form.querySelector('#storage-new-type-choice');
         const typeDetecting = form.querySelector('#storage-new-type-detecting');
         const typeSource = form.querySelector('#storage-new-type-source');
+        const typeChange = form.querySelector('#storage-new-type-change');
         const prefillPath = pathInput.value.trim();
         // The type known for the prefill path: rendered by the server (UNC) or taken from the endpoint's answer.
         let autoType = typeSource && typeSource.value === 'auto' ? typeSelect.value : null;
@@ -125,6 +126,14 @@
             }
         }
 
+        // "Change": the person takes the type over, so the detected one is dropped for good and never re-applied.
+        if (typeChange) {
+            typeChange.addEventListener('click', () => {
+                autoType = null;
+                showChoice();
+            });
+        }
+
         function finishDetection(type) {
             if (!detectionPending) {
                 return;
@@ -156,6 +165,7 @@
         }
 
         // forPrefill: this request is the one that also asks for the type of the form's initial path.
+        // Only that request pays for the slow type lookup on the server; the hints of later path changes stay light.
         async function requestNameHint(forPrefill = false) {
             if (!nameInput || typeof fetch !== 'function') {
                 if (forPrefill) {
@@ -172,7 +182,7 @@
             let type = null;
             if (path !== '') {
                 try {
-                    const response = await fetch(hintUrl + '?path=' + encodeURIComponent(path), {
+                    const response = await fetch(hintUrl + '?path=' + encodeURIComponent(path) + (forPrefill ? '&type=1' : ''), {
                         headers: { 'X-AnimeDB-Shell': '1' },
                     });
                     if (!response.ok) {

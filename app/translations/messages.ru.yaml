@@ -768,6 +768,7 @@ storage_new:
     existing_storage_link: Открыть хранилище
     cancel_button: Отмена
     type_detecting: Определяю тип…
+    type_change: Изменить
 
 storage_scan_prompt:
     title: Запустить сканирование? — AnimeDB

@@ -51,8 +51,10 @@ final class StorageTypeResolverTest extends TestCase
             'fixed nvme' => ['Fixed', 'NVMe', StorageType::Folder],
             'fixed raid' => ['Fixed', 'RAID', StorageType::Folder],
             'fixed sas' => ['Fixed', 'SAS', StorageType::Folder],
-            'fixed spaces' => ['Fixed', 'Spaces', StorageType::Folder],
-            'fixed file-backed virtual' => ['Fixed', 'FileBackedVirtual', StorageType::Folder],
+            'fixed storage spaces' => ['Fixed', 'Storage Spaces', StorageType::Folder],
+            'fixed file-backed virtual' => ['Fixed', 'File Backed Virtual', StorageType::Folder],
+            'fixed fibre channel' => ['Fixed', 'Fibre Channel', StorageType::Folder],
+            'fixed bus without spaces' => ['Fixed', 'FileBackedVirtual', StorageType::Folder],
             'fixed iscsi' => ['Fixed', 'iSCSI', StorageType::Folder],
             'fixed virtual' => ['Fixed', 'Virtual', StorageType::Folder],
             'fixed empty bus' => ['Fixed', '', null],
@@ -125,7 +127,7 @@ final class StorageTypeResolverTest extends TestCase
     public function testOnlyTheLetterIsHandedToTheProbe(): void
     {
         $probe = $this->createMock(VolumeProbeInterface::class);
-        $probe->expects($this->exactly(2))->method('probe')->with('D')->willReturn(null);
+        $probe->expects($this->exactly(2))->method('probe')->with('D', true)->willReturn(null);
         $resolver = new StorageTypeResolver($probe);
 
         $resolver->probe('d:\\Some folder\\..\\x');

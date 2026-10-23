@@ -58,7 +58,7 @@ final class StorageNameHinterTest extends TestCase
             {
             }
 
-            public function probe(string $letter): VolumeInfo
+            public function probe(string $letter, bool $withBus = false): VolumeInfo
             {
                 ++$this->calls;
 

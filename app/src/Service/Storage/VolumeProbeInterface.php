@@ -30,6 +30,10 @@ namespace App\Service\Storage;
 /** Reads the properties of a volume by its drive letter; kept behind an interface so tests do not start processes. */
 interface VolumeProbeInterface
 {
-    /** @param string $letter a single ASCII drive letter, `D` */
-    public function probe(string $letter): ?VolumeInfo;
+    /**
+     * @param string $letter  a single ASCII drive letter, `D`
+     * @param bool   $withBus whether to also ask for the disk bus type; it is much slower than the label
+     *                        and the drive type, so only the type detection of a new storage asks for it
+     */
+    public function probe(string $letter, bool $withBus = false): ?VolumeInfo;
 }

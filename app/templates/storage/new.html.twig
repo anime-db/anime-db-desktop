@@ -49,6 +49,7 @@
             <div id="storage-new-type-text" class="mb-3"{% if not type_auto %} hidden{% endif %}>
                 <span class="form-label d-block">{{ 'storage_new.field_type'|trans }}</span>
                 <span id="storage-new-type-name">{% if type is not null %}{{ ('storage_type.' ~ type)|trans }}{% endif %}</span>
+                <button type="button" id="storage-new-type-change" class="btn btn-link btn-sm p-0 ms-2 align-baseline">{{ 'storage_new.type_change'|trans }}</button>
             </div>
 
             <div id="storage-new-type-detecting" class="mb-3 text-body-secondary"{% if not type_detecting %} hidden{% endif %}>{{ 'storage_new.type_detecting'|trans }}</div>

@@ -305,16 +305,33 @@ final class StorageNewControllerTest extends TestCase
     {
         $server = ['HTTP_HOST' => '127.0.0.1', 'HTTP_X_ANIMEDB_SHELL' => '1'];
         $probe = $this->createMock(VolumeProbeInterface::class);
-        $probe->expects($this->exactly(2))->method('probe')->with('D')->willReturn(new VolumeInfo('Backup', 'Removable', null));
+        $probe->expects($this->exactly(2))->method('probe')->with('D', true)->willReturn(new VolumeInfo('Backup', 'Removable', null));
+        $controller = $this->createController(volumeProbe: $probe);
+
+        $hint = static fn (string $path): string => (string) $controller
+            ->nameHint(Request::create('/storage/new/name-hint', 'GET', ['path' => $path, 'type' => '1'], server: $server))
+            ->getContent();
+
+        $this->assertSame('{"name":"Backup","type":"external"}', $hint('D:\\'));
+        $this->assertSame('{"name":"share","type":"folder"}', $hint('\\\\srv\\share'));
+        $this->assertSame('{"name":"Series","type":"external"}', $hint('D:\\Anime\\Series'));
+    }
+
+    public function testNameHintWithoutTypeRequestKeepsTheLightBehaviour(): void
+    {
+        $server = ['HTTP_HOST' => '127.0.0.1', 'HTTP_X_ANIMEDB_SHELL' => '1'];
+        $probe = $this->createMock(VolumeProbeInterface::class);
+        $probe->expects($this->once())->method('probe')->with('D', false)->willReturn(new VolumeInfo('Backup', 'Removable', 'USB'));
         $controller = $this->createController(volumeProbe: $probe);
 
         $hint = static fn (string $path): string => (string) $controller
             ->nameHint(Request::create('/storage/new/name-hint', 'GET', ['path' => $path], server: $server))
             ->getContent();
 
-        $this->assertSame('{"name":"Backup","type":"external"}', $hint('D:\\'));
-        $this->assertSame('{"name":"share","type":"folder"}', $hint('\\\\srv\\share'));
-        $this->assertSame('{"name":"Series","type":"external"}', $hint('D:\\Anime\\Series'));
+        // A drive root is probed for its label only (no bus lookup); a folder path is not probed at all.
+        $this->assertSame('{"name":"Backup","type":null}', $hint('D:\\'));
+        $this->assertSame('{"name":"Series","type":null}', $hint('D:\\Anime\\Series'));
+        $this->assertSame('{"name":"share","type":null}', $hint('\\\\srv\\share'));
     }
 
     public function testNameHintAnswersNullTypeWhenTheProbeFailsAndDoesNotRetry(): void
@@ -325,7 +342,7 @@ final class StorageNewControllerTest extends TestCase
         $response = $this->createController(volumeProbe: $probe)->nameHint(Request::create(
             '/storage/new/name-hint',
             'GET',
-            ['path' => 'D:\\'],
+            ['path' => 'D:\\', 'type' => '1'],
             server: ['HTTP_HOST' => '127.0.0.1', 'HTTP_X_ANIMEDB_SHELL' => '1'],
         ));
 

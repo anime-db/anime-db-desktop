@@ -97,7 +97,7 @@ final class StorageNewController
     }
 
     /**
-     * Suggested storage name and type for a path, as `{name: string|null, type: string|null}`. Only the desktop shell's own
+     * Suggested storage name and, with `type=1`, type for a path, as `{name: string|null, type: string|null}`. Only the desktop shell's own
      * window may ask (see {@see ShellRequestGuard}), and the check is the first thing done here.
      */
     #[Route('/storage/new/name-hint', name: 'storage_new_name_hint', methods: ['GET'])]
@@ -108,6 +108,12 @@ final class StorageNewController
         }
 
         $path = (string) $request->query->get('path', '');
+        // The type is detected only on request (`type=1`, sent for the form's prefilled path): the probe with the
+        // bus type is slow, and the name hint of every later path change must stay as light as it was.
+        if (!$request->query->getBoolean('type')) {
+            return new JsonResponse(['name' => $this->nameHinter->hint($path, true), 'type' => null]);
+        }
+
         // One probe run answers both the drive label and the type. A failed probe is replaced with an
         // empty result for a drive path, so the name hinter does not start a second run.
         $volume = $this->typeResolver->probe($path);

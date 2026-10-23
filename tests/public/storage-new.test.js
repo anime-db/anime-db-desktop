@@ -289,7 +289,7 @@ describe('type detection', () => {
         document.body.innerHTML = `
             <form data-control="storage-new">
                 <input type="hidden" id="storage-new-type-source" name="type_source" value="${auto ? 'auto' : ''}">
-                <div id="storage-new-type-text"${auto ? '' : ' hidden'}><span id="storage-new-type-name"></span></div>
+                <div id="storage-new-type-text"${auto ? '' : ' hidden'}><span id="storage-new-type-name"></span><button type="button" id="storage-new-type-change">Change</button></div>
                 <div id="storage-new-type-detecting"${detecting ? '' : ' hidden'}>Detecting</div>
                 <div id="storage-new-type-choice"${auto || detecting ? ' hidden' : ''}>
                     <select id="storage-new-type" data-writable-types="folder,external">
@@ -338,6 +338,56 @@ describe('type detection', () => {
         expect(el('storage-new-name').value).toBe('Backup');
         // The select is still in the DOM with its data-*, so the folder button follows the type.
         expect(el('storage-new-pick-folder').hidden).toBe(false);
+    });
+
+    test('only the prefill request asks for the type', async () => {
+        setUpTypeDom();
+        global.fetch = jest.fn(() => answer({ name: 'x', type: 'external' }));
+        loadStorageNewModule();
+        await flushMicrotasks();
+
+        const path = el('storage-new-path');
+        path.value = 'D:\\Anime\\Series';
+        path.dispatchEvent(new Event('change'));
+        await flushMicrotasks();
+
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        expect(global.fetch.mock.calls[0][0]).toBe('/storage/new/name-hint?path=D%3A%5C&type=1');
+        expect(global.fetch.mock.calls[1][0]).not.toContain('type=1');
+    });
+
+    test('"Change" returns the full choice and returning to the prefill path does not override the pick', async () => {
+        setUpTypeDom();
+        global.fetch = jest.fn(() => answer({ name: null, type: 'external' }));
+        loadStorageNewModule();
+        await flushMicrotasks();
+        expect(el('storage-new-type-text').hidden).toBe(false);
+
+        el('storage-new-type-change').click();
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-text').hidden).toBe(true);
+        expect(el('storage-new-type-source').value).toBe('');
+
+        el('storage-new-type').value = 'video';
+        const path = el('storage-new-path');
+        path.value = 'C:\\Anime';
+        path.dispatchEvent(new Event('input'));
+        path.value = 'D:\\';
+        path.dispatchEvent(new Event('input'));
+
+        expect(el('storage-new-type').value).toBe('video');
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-source').value).toBe('');
+    });
+
+    test('"Change" works on a form re-rendered with a type as text', () => {
+        setUpTypeDom('\\\\srv\\share', { auto: true, detecting: false, name: 'share' });
+        loadStorageNewModule();
+
+        el('storage-new-type-change').click();
+
+        expect(el('storage-new-type-choice').hidden).toBe(false);
+        expect(el('storage-new-type-source').value).toBe('');
     });
 
     test('the folder button stays hidden for a type that is not writable', async () => {

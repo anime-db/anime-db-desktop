@@ -768,6 +768,7 @@ storage_new:
     existing_storage_link: Open storage
     cancel_button: Cancel
     type_detecting: Detecting type…
+    type_change: Change
 
 storage_scan_prompt:
     title: Run a scan? — AnimeDB

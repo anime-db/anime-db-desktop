@@ -75,7 +75,7 @@ final class PowerShellVolumeProbeTest extends TestCase
             return new Process(['php', '-r', 'echo \'{"label":"Backup","driveType":"Fixed","busType":"USB"}\';']);
         });
 
-        $volume = $probe->probe('D');
+        $volume = $probe->probe('D', true);
         $this->assertSame('Backup', $volume?->label);
         $this->assertSame('Fixed', $volume->driveType);
         $this->assertSame('USB', $volume->busType);
@@ -85,6 +85,17 @@ final class PowerShellVolumeProbeTest extends TestCase
         $this->assertStringContainsString("DriveInfo]::new('D')", $script);
         $this->assertStringContainsString("Get-Partition -DriveLetter 'D' -ErrorAction Stop | Get-Disk -ErrorAction Stop", $script);
         $this->assertSame(3, substr_count($script, 'try{'));
+    }
+
+    public function testLabelOnlyScriptDoesNotAskForTheBus(): void
+    {
+        $command = (new PowerShellVolumeProbe(windows: true))->buildCommand('D');
+
+        $this->assertIsArray($command);
+        $script = end($command);
+        $this->assertStringContainsString("DriveInfo]::new('D')", $script);
+        $this->assertStringNotContainsString('Get-Partition', $script);
+        $this->assertStringNotContainsString('Get-Disk', $script);
     }
 
     public function testMissingTypeFieldsComeBackAsNull(): void

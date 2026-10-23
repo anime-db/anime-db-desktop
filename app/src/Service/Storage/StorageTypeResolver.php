@@ -44,10 +44,13 @@ final class StorageTypeResolver
     /** Disk buses that are removable media. */
     private const array REMOVABLE_BUSES = ['usb', 'sd', 'mmc', '1394'];
 
-    /** Known buses of a built-in or network-like disk. */
+    /**
+     * Known buses of a built-in or network-like disk, as `[string]` of the Storage module's BusType prints them
+     * (`Fibre Channel`, `File Backed Virtual`, `Storage Spaces`) once the case and the spaces are dropped.
+     */
     private const array FIXED_BUSES = [
-        'sata', 'nvme', 'raid', 'sas', 'spaces', 'filebackedvirtual', 'iscsi', 'virtual',
-        'scsi', 'ata', 'atapi', 'fibre channel', 'ssa', 'scm', 'ufs',
+        'sata', 'nvme', 'raid', 'sas', 'storagespaces', 'filebackedvirtual', 'iscsi', 'virtual',
+        'scsi', 'ata', 'atapi', 'fibrechannel', 'ssa', 'scm', 'ufs',
     ];
 
     public function __construct(
@@ -67,12 +70,12 @@ final class StorageTypeResolver
         return preg_match(self::UNC_PATTERN, trim($path)) === 1 ? StorageType::Folder : null;
     }
 
-    /** Probes the volume of a path with a drive letter (one probe run); null for any other path. */
+    /** Probes the volume of a path with a drive letter, bus type included (one probe run); null for any other path. */
     public function probe(string $path): ?VolumeInfo
     {
         $letter = $this->driveLetter($path);
 
-        return $letter === null ? null : $this->volumeProbe->probe($letter);
+        return $letter === null ? null : $this->volumeProbe->probe($letter, true);
     }
 
     /** @param VolumeInfo|null $volume the result of {@see self::probe()} for the same path */
@@ -98,7 +101,7 @@ final class StorageTypeResolver
 
     private function byBus(?string $busType): ?StorageType
     {
-        $bus = strtolower(trim((string) $busType));
+        $bus = strtolower((string) preg_replace('/[\s_-]+/', '', $busType ?? ''));
 
         return match (true) {
             \in_array($bus, self::REMOVABLE_BUSES, true) => StorageType::External,

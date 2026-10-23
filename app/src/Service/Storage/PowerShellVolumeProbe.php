@@ -55,7 +55,7 @@ final class PowerShellVolumeProbe implements VolumeProbeInterface
      *
      * @return list<string>|null
      */
-    public function buildCommand(string $letter): ?array
+    public function buildCommand(string $letter, bool $withBus = false): ?array
     {
         if (preg_match('/^[A-Za-z]$/D', $letter) !== 1) {
             return null;
@@ -65,17 +65,21 @@ final class PowerShellVolumeProbe implements VolumeProbeInterface
         $script = '[Console]::OutputEncoding=[Text.Encoding]::UTF8;'
             .'$label=$null;$driveType=$null;$busType=$null;'
             ."try{\$label=[System.IO.DriveInfo]::new('".$letter."').VolumeLabel}catch{};"
-            ."try{\$driveType=[string][System.IO.DriveInfo]::new('".$letter."').DriveType}catch{};"
-            ."try{\$busType=[string](Get-Partition -DriveLetter '".$letter."' -ErrorAction Stop"
-            .' | Get-Disk -ErrorAction Stop | Select-Object -First 1).BusType}catch{};'
-            .'ConvertTo-Json -Compress -InputObject @{label=$label;driveType=$driveType;busType=$busType}';
+            ."try{\$driveType=[string][System.IO.DriveInfo]::new('".$letter."').DriveType}catch{};";
+        // Get-Partition | Get-Disk loads the Storage module and queries CIM (seconds on a cold start), so
+        // the plain label lookup of the name hint does not pay for it.
+        if ($withBus) {
+            $script .= "try{\$busType=[string](Get-Partition -DriveLetter '".$letter."' -ErrorAction Stop"
+                .' | Get-Disk -ErrorAction Stop | Select-Object -First 1).BusType}catch{};';
+        }
+        $script .= 'ConvertTo-Json -Compress -InputObject @{label=$label;driveType=$driveType;busType=$busType}';
 
         return ['powershell', '-NoProfile', '-NonInteractive', '-Command', $script];
     }
 
-    public function probe(string $letter): ?VolumeInfo
+    public function probe(string $letter, bool $withBus = false): ?VolumeInfo
     {
-        $command = $this->windows ? $this->buildCommand($letter) : null;
+        $command = $this->windows ? $this->buildCommand($letter, $withBus) : null;
         if ($command === null) {
             return null;
         }
