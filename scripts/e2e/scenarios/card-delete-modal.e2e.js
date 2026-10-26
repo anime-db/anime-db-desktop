@@ -46,7 +46,7 @@ async function linkToSource(page, session) {
     await expect(page.getByRole('switch', { name: 'Synchronization: on' })).toBeVisible();
 
     await page.goto(urlOf(session, '/anime/search-plugins'));
-    await page.getByRole('searchbox', { name: 'Title' }).fill('Gintama');
+    await page.getByRole('searchbox', { name: 'Name' }).fill('Gintama');
     await page.getByRole('button', { name: 'Search' }).click();
     await page.locator('.search-plugins__candidate').click();
     await page.getByRole('button', { name: 'Fill in the existing record' }).click();

@@ -46,7 +46,7 @@ test.describe('card labels', () => {
 
         await input(page).fill('Favourite');
         await input(page).press('Enter');
-        await expect(chips(page)).toHaveText(['Sample×', 'Favourite×']);
+        await expect(chips(page)).toHaveText(['Sample', 'Favourite']);
         await save(page);
 
         await expect(viewLabels(page)).toHaveText(['Sample', 'Favourite']);
@@ -97,7 +97,7 @@ test.describe('card labels', () => {
         await expect(suggestion).toBeVisible();
         await suggestion.click();
 
-        await expect(chips(page)).toHaveText(['Sample×', 'Zeta×']);
+        await expect(chips(page)).toHaveText(['Sample', 'Zeta']);
         await expect(labels(page).locator('[data-labels-suggestions]')).toBeHidden();
         await save(page);
         await expect(viewLabels(page)).toHaveText(['Sample', 'Zeta']);
@@ -110,7 +110,7 @@ test.describe('card labels', () => {
         await input(page).fill('Nothing like it');
         await expect(labels(page).locator('[data-labels-suggestions]')).toBeHidden();
         await input(page).press('Enter');
-        await expect(chips(page)).toHaveText(['Sample×', 'Nothing like it×']);
+        await expect(chips(page)).toHaveText(['Sample', 'Nothing like it']);
         await save(page);
 
         await expect(viewLabels(page)).toHaveText(['Sample', 'Nothing like it']);
