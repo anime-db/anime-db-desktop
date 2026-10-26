@@ -70,7 +70,7 @@ test.describe('catalog list', () => {
 
         await pagination.getByRole('button', { name: '2' }).click();
         await expect(cards(page)).toHaveCount(1);
-        await expect(pagination.getByRole('button', { name: '2' })).toHaveAttribute('aria-current', 'true');
+        await expect(pagination.getByRole('button', { name: '2' })).toHaveAttribute('aria-current', 'page');
 
         await pagination.getByRole('button', { name: '1' }).click();
         await expect(cards(page)).toHaveCount(6);
