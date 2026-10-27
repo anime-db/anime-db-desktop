@@ -28,7 +28,11 @@ const { app, session } = require('electron');
  * manifest-driven <link>/<script src> tag (see PluginAssetController) — there is no inline plugin
  * script or style left anywhere in the templates, so script-src/style-src need no 'unsafe-inline',
  * nonce or hash exception. img-src allows https: for source favicons rendered from arbitrary
- * domains (anime/show.html.twig), and connect-src allows ws: for the scan-progress WebSocket.
+ * domains (anime/show.html.twig), data: for the inline SVGs Bootstrap draws through
+ * background-image: url("data:image/svg+xml,...") (.form-switch, .form-select, .form-check,
+ * .btn-close, validation icons), and connect-src allows ws: for the scan-progress WebSocket. data: in
+ * img-src does not allow script execution: an SVG used as an image never runs JS, and script-src
+ * stays 'self'.
  *
  * @type {string}
  */
@@ -36,7 +40,7 @@ const CONTENT_SECURITY_POLICY = [
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self'",
-    "img-src 'self' app-media: https:",
+    "img-src 'self' app-media: https: data:",
     "connect-src 'self' ws:",
     "font-src 'self'",
     "object-src 'none'",
