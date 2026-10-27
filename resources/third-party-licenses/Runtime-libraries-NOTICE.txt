@@ -38,3 +38,32 @@ libsodium  —  libsodium.dll
   Used by the PHP extension ext/php_sodium.dll.
   ISC License. Full text: texts/libsodium-ISC.txt
   Corresponding source: https://github.com/jedisct1/libsodium
+
+--------------------------------------------------------------------------------
+libcurl  —  statically linked into ext/php_curl.dll
+
+  Copyright (c) 1996 - 2026, Daniel Stenberg, <daniel@haxx.se>, and many
+  contributors, see the THANKS file.
+  Version 8.21.0, read from the version string embedded in the shipped DLL.
+  Used by the PHP extension ext/php_curl.dll.
+  curl License (MIT/X derivative). Full text: texts/curl-license.txt
+  Corresponding source: https://github.com/curl/curl
+
+--------------------------------------------------------------------------------
+libssh2  —  libssh2.dll
+
+  Copyright (C) The libssh2 project and its contributors.
+  Version 1.11.1, read from the PE version resource of the shipped DLL.
+  Used by libcurl in ext/php_curl.dll.
+  BSD 3-Clause License. Full text: texts/libssh2-BSD-3-Clause.txt
+  Corresponding source: https://github.com/libssh2/libssh2
+
+--------------------------------------------------------------------------------
+nghttp2  —  nghttp2.dll
+
+  Copyright (c) 2012, 2014, 2015, 2016 Tatsuhiro Tsujikawa
+  Copyright (c) 2012, 2014, 2015, 2016 nghttp2 contributors
+  Version 1.69.0, read from the PE version resource of the shipped DLL.
+  Used by libcurl in ext/php_curl.dll.
+  MIT License. Full text: texts/nghttp2-MIT.txt
+  Corresponding source: https://github.com/nghttp2/nghttp2
