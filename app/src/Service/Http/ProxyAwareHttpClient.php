@@ -64,20 +64,22 @@ final class ProxyAwareHttpClient implements HttpClientInterface
      * also trusts the system certificate store, see {@see self::withPlatformCurlOptions()}.
      *
      * @param array<string, mixed> $defaultOptions
+     * @param bool|null            $isWindows      platform override, null detects it
      */
-    public static function create(ProxyConfigProvider $proxyConfigProvider, array $defaultOptions = []): self
+    public static function create(ProxyConfigProvider $proxyConfigProvider, array $defaultOptions = [], ?bool $isWindows = null): self
     {
-        return new self(self::createCurlClient($defaultOptions), $proxyConfigProvider);
+        return new self(self::createCurlClient($defaultOptions, $isWindows), $proxyConfigProvider);
     }
 
     /**
      * Builds a {@see CurlHttpClient} with the platform-specific curl defaults applied.
      *
      * @param array<string, mixed> $defaultOptions
+     * @param bool|null            $isWindows      platform override, null detects it
      */
-    public static function createCurlClient(array $defaultOptions = []): CurlHttpClient
+    public static function createCurlClient(array $defaultOptions = [], ?bool $isWindows = null): CurlHttpClient
     {
-        return new CurlHttpClient(self::withPlatformCurlOptions($defaultOptions, \DIRECTORY_SEPARATOR === '\\'));
+        return new CurlHttpClient(self::withPlatformCurlOptions($defaultOptions, $isWindows ?? \DIRECTORY_SEPARATOR === '\\'));
     }
 
     /**

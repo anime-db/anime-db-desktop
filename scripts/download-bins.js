@@ -60,7 +60,7 @@ MCowBQYDK2VwAyEALmmMkE5+6zKiMwmlKYc1/SAb4oFlg0ueTV0szzySnI0=
 // OS-provided DLLs and the VC runtime; sodium backs the plugin registry signature check, issue
 // #1082, curl → libssh2.dll, nghttp2.dll, brotlidec.dll, libssl-3-x64.dll; IPHLPAPI.dll/Secur32.dll
 // are OS-provided; curl is shipped because SOCKS5 proxy support exists only in the curl transport,
-// issue #1149 — the dependency list is to be confirmed with `objdump -p` on the archive). ctype/iconv/json/xml have no ext/php_*.dll in
+// issue #1149). ctype/iconv/json/xml have no ext/php_*.dll in
 // the archive — this PHP build compiles them in statically, so they need no `extension=` line.
 // See .claude-docs/decisions.md for the curated-set-vs-full-archive tradeoff and why the
 // extension list isn't just check-platform-reqs output.

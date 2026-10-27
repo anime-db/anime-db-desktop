@@ -207,8 +207,38 @@ final class ProxyAwareHttpClientTest extends TestCase
         self::assertSame($defaults, ProxyAwareHttpClient::withPlatformCurlOptions($defaults, false));
     }
 
-    public function testCreateCurlClientBuildsCurlTransport(): void
+    public function testCreateCurlClientAppliesNativeCaOnWindows(): void
     {
-        self::assertInstanceOf(CurlHttpClient::class, ProxyAwareHttpClient::createCurlClient(['timeout' => 10]));
+        $client = ProxyAwareHttpClient::createCurlClient(['timeout' => 10], true);
+
+        $options = $this->defaultOptionsOf($client);
+        self::assertSame(\CURLSSLOPT_NATIVE_CA, $options['extra']['curl'][\CURLOPT_SSL_OPTIONS]);
+        self::assertEquals(10, $options['timeout']);
+    }
+
+    public function testCreateCurlClientLeavesOptionsUntouchedOffWindows(): void
+    {
+        $client = ProxyAwareHttpClient::createCurlClient(['timeout' => 10], false);
+
+        self::assertArrayNotHasKey('curl', $this->defaultOptionsOf($client)['extra'] ?? []);
+    }
+
+    public function testCreateAppliesNativeCaToInnerTransportOnWindows(): void
+    {
+        $provider = new ProxyConfigProvider(new AppConfigStore($this->configPath));
+
+        $decorator = ProxyAwareHttpClient::create($provider, ['timeout' => 10], true);
+
+        $inner = (new \ReflectionProperty(ProxyAwareHttpClient::class, 'client'))->getValue($decorator);
+        self::assertInstanceOf(CurlHttpClient::class, $inner);
+        self::assertSame(\CURLSSLOPT_NATIVE_CA, $this->defaultOptionsOf($inner)['extra']['curl'][\CURLOPT_SSL_OPTIONS]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function defaultOptionsOf(CurlHttpClient $client): array
+    {
+        return (new \ReflectionProperty($client, 'defaultOptions'))->getValue($client);
     }
 }
