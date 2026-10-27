@@ -193,22 +193,23 @@ jobs:
       # её на странице релизов) задаётся только при создании релиза. softprops у существующего
       # релиза с body перезаписывает тело целиком, а с append_body дописывает строку повторно —
       # перезапуск publish стёр бы правки ментейнера или задублировал строку. Поэтому сначала
-      # узнаём, есть ли релиз. Различаем только 200 и 404: любой другой ответ роняет шаг, а не
+      # узнаём, есть ли релиз, — тем же способом, что и softprops: по списку релизов, куда входят
+      # и черновики. releases/tags/{tag} черновик не отдаёт (404), и заранее подготовленные в
+      # draft release notes были бы перезаписаны. Ошибка gh api роняет шаг (bash -e), а не
       # принимается за «релиза нет» — иначе сбой API на перезапуске перезаписал бы тело.
       - name: Check whether the release already exists
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
         run: |
-          status=$(curl -sS -o /dev/null -w '%{http_code}' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H 'Accept: application/vnd.github+json' \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME")
-          case "$status" in
-            200) echo 'exists=true' >> "$GITHUB_OUTPUT" ;;
-            404) echo 'exists=false' >> "$GITHUB_OUTPUT" ;;
-            *) echo "::error::Unexpected HTTP $status while looking up release $GITHUB_REF_NAME"; exit 1 ;;
-          esac
+          ids=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == env.TAG) | .id')
+          if [ -n "$ids" ]; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
 
       # Релиз — основной канал автообновления: клиенты берут latest.yml и latest.yml.sig
       # последнего релиза, проверяют подпись и качают инсталлятор из релиза его тега.
