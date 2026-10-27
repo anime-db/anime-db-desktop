@@ -63,8 +63,14 @@ describe('addContentSecurityPolicy', () => {
         expect(csp.CONTENT_SECURITY_POLICY).not.toMatch(/unsafe-inline/);
     });
 
-    test('img-src allows same-origin, app-media: and https:, covering covers/gallery/plugin assets and source favicons', () => {
-        expect(csp.CONTENT_SECURITY_POLICY).toMatch(/img-src 'self' app-media: https:/);
+    test('img-src allows same-origin, app-media:, https: and data:, covering covers/gallery/plugin assets, source favicons and inline Bootstrap SVGs', () => {
+        expect(csp.CONTENT_SECURITY_POLICY).toMatch(/img-src 'self' app-media: https: data:(;|$)/);
+    });
+
+    test('script-src stays exactly \'self\' even though img-src allows data:', () => {
+        const scriptSrc = csp.CONTENT_SECURITY_POLICY.split('; ').find(d => d.startsWith('script-src '));
+
+        expect(scriptSrc).toBe("script-src 'self'");
     });
 
     test('connect-src allows ws: for the scan-progress WebSocket', () => {
