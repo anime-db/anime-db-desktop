@@ -189,6 +189,29 @@ jobs:
       - name: Refuse to republish a tag with different bytes
         run: node scripts/check-release-republish.js "$GITHUB_REF_NAME" dist/latest.yml
 
+      # Тело релиза со ссылкой на Code signing policy (issue #1157: SignPath Foundation требует,
+      # чтобы страница загрузки называла её и вела на политику). Строка не утверждает, что релиз
+      # подписан: статус подписи — в самом разделе README задаётся только при создании релиза. softprops у существующего
+      # релиза с body перезаписывает тело целиком, а с append_body дописывает строку повторно —
+      # перезапуск publish стёр бы правки ментейнера или задублировал строку. Поэтому сначала
+      # узнаём, есть ли релиз, — тем же способом, что и softprops: по списку релизов, куда входят
+      # и черновики. releases/tags/{tag} черновик не отдаёт (404), и заранее подготовленные в
+      # draft release notes были бы перезаписаны. Ошибка gh api роняет шаг (bash -e), а не
+      # принимается за «релиза нет» — иначе сбой API на перезапуске перезаписал бы тело.
+      - name: Check whether the release already exists
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ids=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == env.TAG) | .id')
+          if [ -n "$ids" ]; then
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+          fi
+
       # Релиз — основной канал автообновления: клиенты берут latest.yml и latest.yml.sig
       # последнего релиза, проверяют подпись и качают инсталлятор из релиза его тега.
       #
@@ -197,10 +220,13 @@ jobs:
       #
       # prerelease: false задан явно: клиенты читают releases/latest, а pre-release туда не
       # попадает; флаг у существующего релиза softprops сохраняет как есть.
+      #
+      # body пуст у существующего релиза: тогда softprops оставляет его тело как есть.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           prerelease: false
+          body: "${{ steps.release.outputs.exists == 'false' && format('Code signing policy (SignPath Foundation): {0}/{1}#code-signing-policy', github.server_url, github.repository) || '' }}"
           fail_on_unmatched_files: true
           files: |
             dist/*.exe
