@@ -183,4 +183,32 @@ final class ProxyAwareHttpClientTest extends TestCase
         self::assertIsArray($capturedOptions);
         self::assertSame(42.0, $capturedOptions['timeout']);
     }
+
+    public function testWindowsOptionsTrustTheSystemCertificateStore(): void
+    {
+        $options = ProxyAwareHttpClient::withPlatformCurlOptions(['timeout' => 5, 'extra' => ['curl' => [\CURLOPT_FRESH_CONNECT => true]]], true);
+
+        self::assertSame(5, $options['timeout']);
+        self::assertSame(\CURLSSLOPT_NATIVE_CA, $options['extra']['curl'][\CURLOPT_SSL_OPTIONS]);
+        self::assertTrue($options['extra']['curl'][\CURLOPT_FRESH_CONNECT]);
+    }
+
+    public function testWindowsOptionsKeepAnExplicitSslOptions(): void
+    {
+        $options = ProxyAwareHttpClient::withPlatformCurlOptions(['extra' => ['curl' => [\CURLOPT_SSL_OPTIONS => 0]]], true);
+
+        self::assertSame(0, $options['extra']['curl'][\CURLOPT_SSL_OPTIONS]);
+    }
+
+    public function testNonWindowsOptionsAreLeftUntouched(): void
+    {
+        $defaults = ['timeout' => 5];
+
+        self::assertSame($defaults, ProxyAwareHttpClient::withPlatformCurlOptions($defaults, false));
+    }
+
+    public function testCreateCurlClientBuildsCurlTransport(): void
+    {
+        self::assertInstanceOf(CurlHttpClient::class, ProxyAwareHttpClient::createCurlClient(['timeout' => 10]));
+    }
 }

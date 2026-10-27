@@ -56,6 +56,7 @@ describe('renderPhpIni', () => {
         expect(ini).toContain('extension=mbstring');
         expect(ini).toContain('extension=gd');
         expect(ini).toContain('extension=sodium');
+        expect(ini).toContain('extension=curl');
         expect(ini).toContain('opcache.enable=1');
     });
 
@@ -169,6 +170,17 @@ describe('ensurePhpIni', () => {
 
         const updated = fs.readFileSync(iniPath, 'utf8');
         expect((updated.match(/^extension=sodium$/gm) || []).length).toBe(1);
+    });
+
+    test('appends extension=curl to a pre-existing file that predates it (issue #1149)', () => {
+        const partial = ['extension_dir = "/fake/ext"', 'extension=intl', 'extension=gd', ''].join('\n');
+        fs.writeFileSync(iniPath, partial, 'utf8');
+
+        ensurePhpIni({ iniPath, iniDir: tmpDir, extensionDir: '/fake/ext' });
+
+        const updated = fs.readFileSync(iniPath, 'utf8');
+        expect((updated.match(/^extension=curl$/gm) || []).length).toBe(1);
+        expect(REQUIRED_INI_DIRECTIVES.some(({ render }) => render() === 'extension=curl')).toBe(true);
     });
 
     test('appends memory_limit to a pre-existing file that predates the directive', () => {
