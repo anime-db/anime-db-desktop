@@ -95,7 +95,7 @@ jobs:
           # `require` из app/composer.json и это можно было проверять машинно
           # (tests/scripts/build-workflow-extensions.test.js). Ровно то, о чём абзац выше: опора на
           # умолчания раннера держится, пока умолчания не изменятся.
-          extensions: apcu, gd, intl, zip, openssl, pdo_sqlite, ctype, iconv, mbstring, sodium
+          extensions: apcu, gd, intl, zip, openssl, pdo_sqlite, ctype, iconv, mbstring, sodium, curl
           ini-values: apc.enable_cli=1
 
       - name: Install dependencies
