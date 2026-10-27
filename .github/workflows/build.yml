@@ -71,7 +71,7 @@ jobs:
           # того дня. Джоба идёт только по тегу, тегов с тех пор не было, и увидели это лишь при
           # ручном прогоне 2026-08-28 (issue #535). Чтобы третьего раза не было, расхождение теперь
           # ловится tests/scripts/build-workflow-extensions.test.js в обычной JS-джобе на каждом PR.
-          extensions: zip, ctype, iconv, gd, intl, mbstring, openssl, pdo_sqlite, sodium
+          extensions: zip, ctype, iconv, gd, intl, mbstring, openssl, pdo_sqlite, sodium, curl
 
       - name: Build installer
         run: npm run build
