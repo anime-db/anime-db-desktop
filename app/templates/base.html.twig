@@ -69,6 +69,23 @@
         <a class="app-nav__brand" href="{{ path('home_index') }}">{{ 'nav.brand'|trans }}</a>
 
         <div class="app-nav__actions">
+            {% set unreadNotifications = notification_unread_count() %}
+            <div class="dropdown app-nav__bell" data-control="notifications-bell"
+                 data-list-url="{{ path('notifications_recent') }}"
+                 data-mark-read-url="{{ path('notifications_mark_read') }}"
+                 data-read-all-url="{{ path('notifications_read_all') }}"
+                 data-csrf-token="{{ csrf_token('notifications') }}"
+                 data-label="{{ 'notification_list.bell_label'|trans }}"
+                 data-label-unread="{{ 'notification_list.bell_label_unread'|trans({'%count%': '%count%'}) }}">
+                <button type="button" class="app-nav__bell-toggle btn btn-link position-relative d-inline-flex align-items-center" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="{% if unreadNotifications > 0 %}{{ 'notification_list.bell_label_unread'|trans({'%count%': unreadNotifications}) }}{% else %}{{ 'notification_list.bell_label'|trans }}{% endif %}">
+                    {{ icon('bell') }}
+                    <span class="app-nav__bell-badge" data-bell-badge aria-hidden="true"{% if unreadNotifications == 0 %} hidden{% endif %}>{{ unreadNotifications }}</span>
+                </button>
+                <div class="dropdown-menu dropdown-menu-end notification-dropdown" data-bell-list data-error="{{ 'notification_list.load_failed'|trans }}">
+                    <p class="notification-dropdown__empty">{{ 'notification_list.loading'|trans }}</p>
+                </div>
+            </div>
+
             <div class="dropdown app-nav__add" data-control="nav-add-menu" data-scan-section-url="{{ path('nav_add_menu_scan_section') }}">
                 <button type="button" class="btn btn-primary dropdown-toggle d-inline-flex align-items-center gap-1" data-bs-toggle="dropdown" aria-expanded="false">
                     {{ icon('plus-lg') }}
@@ -99,23 +116,6 @@
                     <li><a class="dropdown-item" href="{{ path('storage_new') }}">{{ 'nav.add_menu_add_storage'|trans }}</a></li>
                     <li><a class="dropdown-item" href="{{ path('anime_new') }}">{{ 'nav.add_menu_empty_entry'|trans }}</a></li>
                 </ul>
-            </div>
-
-            {% set unreadNotifications = notification_unread_count() %}
-            <div class="dropdown app-nav__bell" data-control="notifications-bell"
-                 data-list-url="{{ path('notifications_recent') }}"
-                 data-mark-read-url="{{ path('notifications_mark_read') }}"
-                 data-read-all-url="{{ path('notifications_read_all') }}"
-                 data-csrf-token="{{ csrf_token('notifications') }}"
-                 data-label="{{ 'notification_list.bell_label'|trans }}"
-                 data-label-unread="{{ 'notification_list.bell_label_unread'|trans({'%count%': '%count%'}) }}">
-                <button type="button" class="btn btn-outline-secondary position-relative d-inline-flex align-items-center" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" aria-label="{% if unreadNotifications > 0 %}{{ 'notification_list.bell_label_unread'|trans({'%count%': unreadNotifications}) }}{% else %}{{ 'notification_list.bell_label'|trans }}{% endif %}">
-                    {{ icon('bell') }}
-                    <span class="app-nav__bell-badge" data-bell-badge aria-hidden="true"{% if unreadNotifications == 0 %} hidden{% endif %}>{{ unreadNotifications }}</span>
-                </button>
-                <div class="dropdown-menu dropdown-menu-end notification-dropdown" data-bell-list data-error="{{ 'notification_list.load_failed'|trans }}">
-                    <p class="notification-dropdown__empty">{{ 'notification_list.loading'|trans }}</p>
-                </div>
             </div>
 
             <a class="app-nav__link{% if current_nav_section == 'downloads' %} app-nav__link--active{% endif %} btn btn-outline-secondary d-inline-flex align-items-center gap-1" href="{{ path('downloads_index') }}"{% if current_nav_section == 'downloads' %} aria-current="page"{% endif %}>

@@ -191,6 +191,19 @@ final class BaseLayoutTopNavRenderingTest extends KernelTestCase
         $this->assertStringContainsString('href="/anime/new"', $html);
     }
 
+    public function testBellComesBeforeAddMenuAndHasNoOutlineBorder(): void
+    {
+        $html = $this->renderBaseLayout('home_index');
+
+        $bell = strpos($html, 'app-nav__bell"');
+        $add = strpos($html, 'app-nav__add"');
+        self::assertNotFalse($bell);
+        self::assertNotFalse($add);
+        self::assertLessThan($add, $bell);
+        self::assertMatchesRegularExpression('#<button[^>]*class="app-nav__bell-toggle btn btn-link[^"]*"#', $html);
+        self::assertDoesNotMatchRegularExpression('#<button[^>]*btn-outline-secondary[^>]*data-bs-auto-close="outside"#', $html);
+    }
+
     private function renderBaseLayoutWithFillerPresenter(string $route, FillerAvailabilityPresenter $presenter): string
     {
         self::bootKernel();

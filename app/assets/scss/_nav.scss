@@ -82,6 +82,36 @@
     }
 }
 
+// Кнопка колокола оповещений без рамки (issue #1154).
+.app-nav__bell-toggle {
+    color: var(--bs-secondary-color);
+
+    // Рамки нет ни в одном состоянии; фокус клавиатуры показываем контуром.
+    &,
+    &:hover,
+    &:focus,
+    &:active,
+    &.show,
+    .show > & {
+        border-color: transparent;
+    }
+
+    &:hover,
+    &:focus,
+    &.show {
+        color: var(--bs-body-color);
+    }
+
+    &:focus {
+        box-shadow: none;
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--bs-primary);
+        outline-offset: 2px;
+    }
+}
+
 // Колокол оповещений (issue #1025). Счётчик скрывается атрибутом `hidden`, который bell-контрол
 // выставляет при нуле; `display` задан здесь, поэтому `[hidden]` возвращаем явно.
 .app-nav__bell-badge {
