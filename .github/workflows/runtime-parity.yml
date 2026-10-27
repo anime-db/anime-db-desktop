@@ -41,6 +41,9 @@ on:
       - 'app/src/Service/AppConfigStore.php'
       - 'app/src/Service/LocaleEndonymResolver.php'
       - 'app/src/Service/Market/PluginRegistrySignatureVerifier.php'
+      # Фабрика curl-клиента: её CA-опции проверяет HTTPS-шаг под боевым интерпретатором (#1151).
+      - 'app/src/Service/Http/ProxyAwareHttpClient.php'
+      - 'app/tests/Unit/Runtime/CurlExtensionTest.php'
       # Состав группы, платформенные требования и сам этот файл.
       - 'app/phpunit.xml.dist'
       - 'app/composer.json'
@@ -164,13 +167,37 @@ jobs:
         working-directory: app
         run: |
           ../bin/frankenphp/frankenphp.exe php-cli -r '
-            foreach (["intl", "zip", "pdo_sqlite", "openssl", "mbstring", "gd", "sodium"] as $extension) {
+            foreach (["intl", "zip", "pdo_sqlite", "openssl", "mbstring", "gd", "sodium", "curl"] as $extension) {
                 if (!extension_loaded($extension)) {
                     fwrite(STDERR, "missing extension: $extension\n");
                     exit(1);
                 }
                 echo "$extension ok\n";
             }
+          '
+
+      # Реальный HTTPS-запрос через продовую фабрику curl-клиента (#1149/#1151). libcurl на
+      # OpenSSL под Windows сам системных корневых сертификатов не видит: без
+      # CURLSSLOPT_NATIVE_CA, которую фабрика добавляет на Windows, запрос падает с ошибкой 60
+      # «unable to get local issuer certificate». Тесты группы сеть не трогают, поэтому
+      # доверие к сертификатам проверяется только здесь. Цель — то же зеркало, что читает маркет.
+      - name: Verify HTTPS through the production curl client
+        if: ${{ !cancelled() }}
+        shell: bash
+        working-directory: app
+        run: |
+          ../bin/frankenphp/frankenphp.exe php-cli -r '
+            require "vendor/autoload.php";
+            $client = App\Service\Http\ProxyAwareHttpClient::createCurlClient(["timeout" => 20, "max_duration" => 60]);
+            try {
+                $response = $client->request("GET", "https://mr01.anime-db.org/plugins-registry.json");
+                $status = $response->getStatusCode();
+                $bytes = strlen($response->getContent());
+            } catch (Throwable $e) {
+                fwrite(STDERR, "HTTPS via CurlHttpClient failed: ".$e->getMessage()."\n");
+                exit(1);
+            }
+            printf("HTTPS ok: status %d, %d bytes\n", $status, $bytes);
           '
 
       # Критерий, открытый с 2026-07-06. Решение «все картинки, попадающие в AppData, ресайзятся
@@ -216,7 +243,7 @@ jobs:
           '
 
       # Сверка с слепком рантайма (issue #471). Слепок снят на этой же джобе и лежит в
-      # репозитории: 20 файлов курируемого набора с пофайловыми хешами, 36 расширений, ICU 77.1
+      # репозитории: 25 файлов курируемого набора с пофайловыми хешами, 38 расширений, ICU 77.1
       # с данными CLDR 47, эндонимы четырёх локалей, значимые ini. Расхождение любого из этих
       # фактов — например при бампе версии FrankenPHP в scripts/versions.json — роняет билд
       # здесь, а не всплывает у пользователя.

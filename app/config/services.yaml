@@ -346,9 +346,11 @@ services:
     # proxy, never the one ProxyConfigProvider currently has saved — a plain CurlHttpClient, not
     # ProxyAwareHttpClient, so the "proxy" option it sets per-request is never overridden by the
     # saved config. Forced to CurlHttpClient rather than HttpClient::create() for the same reason
-    # as app.plugin_media.http_client: SOCKS5 needs ext-curl.
+    # as app.plugin_media.http_client: SOCKS5 needs ext-curl. Built through the same factory so it
+    # gets the same platform curl defaults (system certificate store on Windows).
     app.proxy_test.http_client:
         class: Symfony\Component\HttpClient\CurlHttpClient
+        factory: ['App\Service\Http\ProxyAwareHttpClient', 'createCurlClient']
         arguments:
             - { timeout: 10, max_duration: 10 }
 

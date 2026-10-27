@@ -10,6 +10,7 @@ extension=openssl
 extension=mbstring
 extension=gd
 extension=sodium
+extension=curl
 
 [Date]
 date.timezone = {{TIMEZONE}}

@@ -28,12 +28,15 @@ declare(strict_types=1);
 namespace App\Tests\Unit;
 
 use App\Kernel;
+use App\Service\Http\ProxyAwareHttpClient;
 use App\Service\Plugin\ExternalIdResolver;
 use App\Service\Version\AppVersionResolver;
 use Composer\InstalledVersions;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\DependencyInjection\ServicesResetter;
 use Symfony\Contracts\Service\ResetInterface;
 
@@ -59,6 +62,22 @@ final class KernelTest extends KernelTestCase
         $this->assertInstanceOf(ServicesResetter::class, $resetter);
         $services = (new \ReflectionProperty(ServicesResetter::class, 'resettableServices'))->getValue($resetter);
         $this->assertContains(ExternalIdResolver::class, array_map(static fn (object $service): string => $service::class, iterator_to_array($services, false)));
+    }
+
+    /**
+     * Issue #1149: the proxy-test client must be built through the factory that applies the platform
+     * curl options (system certificate store on Windows); a bare `CurlHttpClient` definition would
+     * silently skip them.
+     */
+    public function testProxyTestHttpClientIsBuiltThroughTheCurlFactory(): void
+    {
+        $container = new ContainerBuilder();
+        (new YamlFileLoader($container, new FileLocator(\dirname(__DIR__, 2).'/config')))->load('services.yaml');
+
+        $this->assertSame(
+            [ProxyAwareHttpClient::class, 'createCurlClient'],
+            $container->getDefinition('app.proxy_test.http_client')->getFactory(),
+        );
     }
 
     public function testPluginCacheDirLivesUnderTheRuntimeDirectory(): void

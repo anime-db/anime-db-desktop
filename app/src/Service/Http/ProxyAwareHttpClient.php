@@ -58,14 +58,53 @@ final class ProxyAwareHttpClient implements HttpClientInterface
      * Production wiring must go through this factory rather than constructing the decorator
      * directly with an arbitrary transport: a SOCKS5 proxy is only supported by ext-curl's
      * transport ({@see \Symfony\Component\HttpClient\NativeHttpClient} has no SOCKS5 support), and
-     * FrankenPHP ships ext-curl, so forcing {@see CurlHttpClient} here means a manual SOCKS5
-     * config never silently degrades to a direct connection.
+     * ext-curl is part of the runtime on every platform (on Windows it is shipped in the curated
+     * extension set precisely because of SOCKS5), so forcing {@see CurlHttpClient} here means a
+     * manual SOCKS5 config never silently degrades to a direct connection. On Windows the client
+     * also trusts the system certificate store, see {@see self::withPlatformCurlOptions()}.
      *
      * @param array<string, mixed> $defaultOptions
+     * @param bool|null            $isWindows      platform override, null detects it
      */
-    public static function create(ProxyConfigProvider $proxyConfigProvider, array $defaultOptions = []): self
+    public static function create(ProxyConfigProvider $proxyConfigProvider, array $defaultOptions = [], ?bool $isWindows = null): self
     {
-        return new self(new CurlHttpClient($defaultOptions), $proxyConfigProvider);
+        return new self(self::createCurlClient($defaultOptions, $isWindows), $proxyConfigProvider);
+    }
+
+    /**
+     * Builds a {@see CurlHttpClient} with the platform-specific curl defaults applied.
+     *
+     * @param array<string, mixed> $defaultOptions
+     * @param bool|null            $isWindows      platform override, null detects it
+     */
+    public static function createCurlClient(array $defaultOptions = [], ?bool $isWindows = null): CurlHttpClient
+    {
+        return new CurlHttpClient(self::withPlatformCurlOptions($defaultOptions, $isWindows ?? \DIRECTORY_SEPARATOR === '\\'));
+    }
+
+    /**
+     * On Windows libcurl is built against OpenSSL and does not read the system root certificates
+     * on its own, so `CURLSSLOPT_NATIVE_CA` is added to `extra.curl` to make it use the Windows
+     * certificate store. Other platforms get the options unchanged. A `CURLOPT_SSL_OPTIONS`
+     * already present in `extra.curl` is kept as is.
+     *
+     * @param array<string, mixed> $options
+     *
+     * @return array<string, mixed>
+     */
+    public static function withPlatformCurlOptions(array $options, bool $isWindows): array
+    {
+        if (!$isWindows) {
+            return $options;
+        }
+
+        $extra = $options['extra'] ?? [];
+        $curl = \is_array($extra['curl'] ?? null) ? $extra['curl'] : [];
+        $curl += [\CURLOPT_SSL_OPTIONS => \CURLSSLOPT_NATIVE_CA];
+        $extra['curl'] = $curl;
+        $options['extra'] = $extra;
+
+        return $options;
     }
 
     /**

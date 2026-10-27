@@ -249,6 +249,7 @@ describe('ensurePhpIni', () => {
             'extension=mbstring',
             'extension=gd',
             'extension=sodium',
+            'extension=curl',
             '; user comment',
             '',
         ].join('\n');
