@@ -239,9 +239,14 @@ FrankenPHP не даёт x32-сборку под Windows, а целевая ау
 
 ## Code signing policy
 
+> **Статус: подпись ещё не действует.** Проект подаёт заявку в программу бесплатной подписи
+> SignPath Foundation. Пока заявка не одобрена и подпись не подключена к сборке, инсталляторы
+> в GitHub Releases **не подписаны**. Когда подпись заработает, здесь будет указана первая
+> подписанная версия.
+
 Free code signing provided by SignPath.io, certificate by SignPath Foundation
 
-- **Что подписывается.** Только инсталлятор `AnimeDB-Setup-<version>.exe` из GitHub Releases,
+- **Что будет подписываться.** Только инсталлятор `AnimeDB-Setup-<version>.exe` из GitHub Releases,
   который собирает GitHub Actions workflow этого репозитория из исходников по тегу.
 - **Что не подписывается.** Сторонние бинарники внутри инсталлятора (Electron, FrankenPHP,
   Meilisearch, qbittorrent-nox, ffprobe) этот проект не подписывает.
