@@ -189,8 +189,8 @@ jobs:
       - name: Refuse to republish a tag with different bytes
         run: node scripts/check-release-republish.js "$GITHUB_REF_NAME" dist/latest.yml
 
-      # Тело релиза со ссылкой на Code signing policy (issue #1157: SignPath Foundation требует
-      # её на странице релизов) задаётся только при создании релиза. softprops у существующего
+      # Тело релиза с атрибуцией SignPath и ссылкой на Code signing policy (issue #1157: SignPath
+      # Foundation требует, чтобы страница загрузки называла её и вела на политику) задаётся только при создании релиза. softprops у существующего
       # релиза с body перезаписывает тело целиком, а с append_body дописывает строку повторно —
       # перезапуск publish стёр бы правки ментейнера или задублировал строку. Поэтому сначала
       # узнаём, есть ли релиз, — тем же способом, что и softprops: по списку релизов, куда входят
@@ -225,7 +225,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           prerelease: false
-          body: "${{ steps.release.outputs.exists == 'false' && format('Code signing policy: {0}/{1}#code-signing-policy', github.server_url, github.repository) || '' }}"
+          body: "${{ steps.release.outputs.exists == 'false' && format('Free code signing provided by SignPath.io, certificate by SignPath Foundation. Code signing policy: {0}/{1}#code-signing-policy', github.server_url, github.repository) || '' }}"
           fail_on_unmatched_files: true
           files: |
             dist/*.exe
