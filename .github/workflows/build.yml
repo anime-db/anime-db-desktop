@@ -189,29 +189,6 @@ jobs:
       - name: Refuse to republish a tag with different bytes
         run: node scripts/check-release-republish.js "$GITHUB_REF_NAME" dist/latest.yml
 
-      # Тело релиза со ссылкой на Code signing policy (issue #1157: SignPath Foundation требует,
-      # чтобы страница загрузки называла её и вела на политику). Строка не утверждает, что релиз
-      # подписан: статус подписи — в самом разделе README задаётся только при создании релиза. softprops у существующего
-      # релиза с body перезаписывает тело целиком, а с append_body дописывает строку повторно —
-      # перезапуск publish стёр бы правки ментейнера или задублировал строку. Поэтому сначала
-      # узнаём, есть ли релиз, — тем же способом, что и softprops: по списку релизов, куда входят
-      # и черновики. releases/tags/{tag} черновик не отдаёт (404), и заранее подготовленные в
-      # draft release notes были бы перезаписаны. Ошибка gh api роняет шаг (bash -e), а не
-      # принимается за «релиза нет» — иначе сбой API на перезапуске перезаписал бы тело.
-      - name: Check whether the release already exists
-        id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          ids=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq '.[] | select(.tag_name == env.TAG) | .id')
-          if [ -n "$ids" ]; then
-            echo 'exists=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'exists=false' >> "$GITHUB_OUTPUT"
-          fi
-
       # Релиз — основной канал автообновления: клиенты берут latest.yml и latest.yml.sig
       # последнего релиза, проверяют подпись и качают инсталлятор из релиза его тега.
       #
@@ -221,18 +198,52 @@ jobs:
       # prerelease: false задан явно: клиенты читают releases/latest, а pre-release туда не
       # попадает; флаг у существующего релиза softprops сохраняет как есть.
       #
-      # body пуст у существующего релиза: тогда softprops оставляет его тело как есть.
+      # body не задаётся: у релиза, созданного заранее (через интерфейс или черновиком), softprops
+      # с body перезаписал бы тело целиком. Строку про Code signing policy дописывает шаг ниже.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           prerelease: false
-          body: "${{ steps.release.outputs.exists == 'false' && format('Code signing policy (SignPath Foundation): {0}/{1}#code-signing-policy', github.server_url, github.repository) || '' }}"
           fail_on_unmatched_files: true
           files: |
             dist/*.exe
             dist/*.exe.blockmap
             dist/latest.yml
             dist/latest.yml.sig
+
+      # Ссылка на Code signing policy в теле релиза (issue #1157): SignPath Foundation требует,
+      # чтобы страница загрузки называла её и вела на политику. Строка не утверждает, что релиз
+      # подписан: статус подписи — в самом разделе README.
+      #
+      # Дописывается в конец тела, только если её там ещё нет, — одинаково для релиза, который
+      # создал softprops выше, и для созданного заранее через интерфейс или черновиком; текст
+      # ментейнера не перезаписывается, перезапуск publish строку не дублирует. Релиз ищется по
+      # списку (как в softprops), потому что releases/tags/{tag} черновиков не отдаёт. Ошибка
+      # gh api роняет шаг (bash -e).
+      - name: Append the Code signing policy link to the release body
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          LINE: "Code signing policy (SignPath Foundation): ${{ github.server_url }}/${{ github.repository }}#code-signing-policy"
+        run: |
+          release=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == env.TAG) | {id, body}' | head -n 1)
+          if [ -z "$release" ]; then
+            echo "::error::Release for $TAG not found right after it was created"
+            exit 1
+          fi
+          id=$(jq -r '.id' <<< "$release")
+          body=$(jq -r '.body // ""' <<< "$release")
+          if grep -qF "$LINE" <<< "$body"; then
+            echo 'The release body already links the Code signing policy.'
+            exit 0
+          fi
+          if [ -n "$body" ]; then
+            body="$body"$'\n\n'"$LINE"
+          else
+            body="$LINE"
+          fi
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -f body="$body" > /dev/null
 
       # Зеркало — второй источник на случай недоступного GitHub. Сбой заливки или сверки после
       # ретраев скрипт сам превращает в ::warning и выходит с 0: GitHub остаётся авторитетным, а
