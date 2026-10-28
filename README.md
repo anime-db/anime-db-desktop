@@ -237,24 +237,9 @@ FrankenPHP не даёт x32-сборку под Windows, а целевая ау
 - [.claude-docs/conventions.md](.claude-docs/conventions.md) — стиль кода и команды
 - [.claude-docs/gotchas.md](.claude-docs/gotchas.md) — нетривиальные ловушки
 
-## Code signing policy
+## Конфиденциальность
 
-> **Статус: подпись ещё не действует.** Проект подаёт заявку в программу бесплатной подписи
-> SignPath Foundation. Пока заявка не одобрена и подпись не подключена к сборке, инсталляторы
-> в GitHub Releases **не подписаны**. Когда подпись заработает, здесь будет указана первая
-> подписанная версия. Строка атрибуции ниже — обязательная формулировка SignPath; она относится
-> только к релизам, подписанным после этого.
-
-Free code signing provided by SignPath.io, certificate by SignPath Foundation
-
-- **Что будет подписываться.** Только инсталлятор `AnimeDB-Setup-<version>.exe` из GitHub Releases,
-  который собирает GitHub Actions workflow этого репозитория из исходников по тегу.
-- **Что не подписывается.** Сторонние бинарники внутри инсталлятора (Electron, FrankenPHP,
-  Meilisearch, qbittorrent-nox, ffprobe) этот проект не подписывает.
-- **Издатель.** В Windows издателем инсталлятора будет показан «SignPath Foundation».
-- **Роли.** Committers and reviewers и Approvers — все роли у владельца репозитория, см.
-  [участников организации](https://github.com/orgs/anime-db/people).
-- **Конфиденциальность.** Что приложение отправляет в сеть — в [PRIVACY.md](PRIVACY.md).
+Что приложение отправляет в сеть — в [PRIVACY.md](PRIVACY.md).
 
 ## Лицензия
 
