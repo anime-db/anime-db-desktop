@@ -24,7 +24,8 @@
         "coverage-matrix": "node scripts/coverage-matrix/index.js",
         "lint": "eslint native/ tests/native/ app/assets/js/ tests/public/ scripts/",
         "lint:fix": "eslint native/ tests/native/ app/assets/js/ tests/public/ scripts/ --fix",
-        "test": "jest"
+        "test": "jest",
+        "security:audit": "node scripts/security-audit.js"
     },
     "devDependencies": {
         "@playwright/test": "^1.63.0",
