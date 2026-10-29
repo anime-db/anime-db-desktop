@@ -1,0 +1,56 @@
+name: Security audit
+
+# Проверка зависимостей на известные уязвимости (issue #1171). Логика — в
+# scripts/security-audit.js (#1170): находки severity ≥ high вне security-audit-baseline.json
+# или с истёкшим сроком валят job; сбой самого аудита — тоже.
+#
+# Только PR, меняющие зависимости, и ручной запуск. Без schedule и без push в master:
+# красный прогон на коммите master ставит на паузу мержи эпиков. Новые уязвимости в
+# неизменённых зависимостях приходят алертами Dependabot, перед релизом — job audit в build.yml
+# (issue #1172).
+on:
+  pull_request:
+    paths:
+      - 'app/composer.lock'
+      - 'app/composer.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'security-audit-baseline.json'
+      - 'scripts/security-audit.js'
+      - '.github/workflows/security-audit.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      # Без cache: npm и без npm ci: скрипт на встроенных модулях Node, npm audit читает
+      # только package-lock.json — lifecycle-скрипты зависимостей не исполняются.
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      # Без composer install: composer audit --locked нужен только app/composer.lock.
+      # Тот же пин PHP, что в ci.yml (список файлов с пином — там), менять вместе.
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          tools: composer
+          coverage: none
+
+      - name: Audit dependencies
+        run: npm run security:audit
