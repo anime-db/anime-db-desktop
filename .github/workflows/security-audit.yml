@@ -6,7 +6,8 @@ name: Security audit
 #
 # Только PR, меняющие зависимости, и ручной запуск. Без schedule и без push в master:
 # красный прогон на коммите master ставит на паузу мержи эпиков. Новые уязвимости в
-# неизменённых зависимостях приходят алертами Dependabot, перед релизом — job audit в build.yml.
+# неизменённых зависимостях приходят алертами Dependabot, перед релизом — job audit в build.yml
+# (issue #1172).
 on:
   pull_request:
     paths:
@@ -43,6 +44,7 @@ jobs:
           node-version: '22'
 
       # Без composer install: composer audit --locked нужен только app/composer.lock.
+      # Тот же пин PHP, что в ci.yml (список файлов с пином — там), менять вместе.
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
