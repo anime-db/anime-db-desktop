@@ -44,7 +44,7 @@ is relative to the AnimeDB installation directory. `NOT FOUND` means the package
 | symfony/config                      | v8.1.1  | MIT              | resources/app/app/vendor/symfony/config/LICENSE                      |
 | symfony/console                     | v8.1.1  | MIT              | resources/app/app/vendor/symfony/console/LICENSE                     |
 | symfony/dependency-injection        | v8.1.1  | MIT              | resources/app/app/vendor/symfony/dependency-injection/LICENSE        |
-| symfony/deprecation-contracts       | v3.7.0  | MIT              | resources/app/app/vendor/symfony/deprecation-contracts/LICENSE       |
+| symfony/deprecation-contracts       | v3.7.1  | MIT              | resources/app/app/vendor/symfony/deprecation-contracts/LICENSE       |
 | symfony/doctrine-bridge             | v8.1.1  | MIT              | resources/app/app/vendor/symfony/doctrine-bridge/LICENSE             |
 | symfony/doctrine-messenger          | v8.1.1  | MIT              | resources/app/app/vendor/symfony/doctrine-messenger/LICENSE          |
 | symfony/dotenv                      | v8.1.0  | MIT              | resources/app/app/vendor/symfony/dotenv/LICENSE                      |
@@ -58,7 +58,7 @@ is relative to the AnimeDB installation directory. `NOT FOUND` means the package
 | symfony/html-sanitizer              | v8.1.6  | MIT              | resources/app/app/vendor/symfony/html-sanitizer/LICENSE              |
 | symfony/http-client                 | v8.1.0  | MIT              | resources/app/app/vendor/symfony/http-client/LICENSE                 |
 | symfony/http-client-contracts       | v3.7.0  | MIT              | resources/app/app/vendor/symfony/http-client-contracts/LICENSE       |
-| symfony/http-foundation             | v8.1.1  | MIT              | resources/app/app/vendor/symfony/http-foundation/LICENSE             |
+| symfony/http-foundation             | v8.1.10 | MIT              | resources/app/app/vendor/symfony/http-foundation/LICENSE             |
 | symfony/http-kernel                 | v8.1.1  | MIT              | resources/app/app/vendor/symfony/http-kernel/LICENSE                 |
 | symfony/messenger                   | v8.1.1  | MIT              | resources/app/app/vendor/symfony/messenger/LICENSE                   |
 | symfony/monolog-bridge              | v8.1.0  | MIT              | resources/app/app/vendor/symfony/monolog-bridge/LICENSE              |
@@ -67,7 +67,7 @@ is relative to the AnimeDB installation directory. `NOT FOUND` means the package
 | symfony/polyfill-deepclone          | v1.40.0 | MIT              | resources/app/app/vendor/symfony/polyfill-deepclone/LICENSE          |
 | symfony/polyfill-intl-grapheme      | v1.38.1 | MIT              | resources/app/app/vendor/symfony/polyfill-intl-grapheme/LICENSE      |
 | symfony/polyfill-intl-normalizer    | v1.38.0 | MIT              | resources/app/app/vendor/symfony/polyfill-intl-normalizer/LICENSE    |
-| symfony/polyfill-mbstring           | v1.38.2 | MIT              | resources/app/app/vendor/symfony/polyfill-mbstring/LICENSE           |
+| symfony/polyfill-mbstring           | v1.43.3 | MIT              | resources/app/app/vendor/symfony/polyfill-mbstring/LICENSE           |
 | symfony/polyfill-php85              | v1.38.1 | MIT              | resources/app/app/vendor/symfony/polyfill-php85/LICENSE              |
 | symfony/routing                     | v8.1.0  | MIT              | resources/app/app/vendor/symfony/routing/LICENSE                     |
 | symfony/runtime                     | v8.1.0  | MIT              | resources/app/app/vendor/symfony/runtime/LICENSE                     |
@@ -83,5 +83,5 @@ is relative to the AnimeDB installation directory. `NOT FOUND` means the package
 | symfony/twig-bundle                 | v8.1.0  | MIT              | resources/app/app/vendor/symfony/twig-bundle/LICENSE                 |
 | symfony/var-dumper                  | v8.1.1  | MIT              | resources/app/app/vendor/symfony/var-dumper/LICENSE                  |
 | symfony/var-exporter                | v8.1.1  | MIT              | resources/app/app/vendor/symfony/var-exporter/LICENSE                |
-| symfony/yaml                        | v8.1.0  | MIT              | resources/app/app/vendor/symfony/yaml/LICENSE                        |
+| symfony/yaml                        | v8.1.10 | MIT              | resources/app/app/vendor/symfony/yaml/LICENSE                        |
 | twig/twig                           | v3.28.0 | BSD-3-Clause     | resources/app/app/vendor/twig/twig/LICENSE                           |
