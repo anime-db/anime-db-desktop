@@ -84,9 +84,15 @@ describe('security-audit', () => {
         expect(r.out).toContain('GHSA-new');
     });
 
-    test('low and moderate findings are ignored', () => {
-        const r = exec({npm: npmReport('foo', 'GHSA-mod', ['node_modules/foo'], 'moderate'), lockPackages: {'node_modules/foo': {}}});
+    test.each(['low', 'moderate'])('%s findings are ignored', (severity) => {
+        const r = exec({npm: npmReport('foo', 'GHSA-mod', ['node_modules/foo'], severity), lockPackages: {'node_modules/foo': {}}});
         expect(r.code).toBe(0);
+    });
+
+    test('critical finding blocks with exit code 1', () => {
+        const r = exec({npm: npmReport('foo', 'GHSA-crit', ['node_modules/foo'], 'critical'), lockPackages: {'node_modules/foo': {}}});
+        expect(r.code).toBe(1);
+        expect(r.out).toContain('GHSA-crit');
     });
 
     test('finding from baseline passes', () => {
@@ -203,6 +209,37 @@ describe('security-audit', () => {
         const r = exec({composer});
         expect(r.code).toBe(1);
         expect(r.out).toContain('CVE-2026-1');
+    });
+
+    function composerAdv(overrides) {
+        return JSON.stringify({advisories: {'v/p': [{advisoryId: 'PKSA-2', packageName: 'v/p', cve: null, title: 'T', ...overrides}]}});
+    }
+
+    test.each([[null], [undefined]])('composer advisory with severity %s is kept as unknown and blocks', (severity) => {
+        const r = exec({composer: composerAdv({severity})});
+        expect(r.code).toBe(1);
+        expect(r.out).toContain('PKSA-2');
+        expect(r.out).toContain('unknown');
+    });
+
+    test.each(['low', 'medium'])('composer advisory with %s severity is ignored', (severity) => {
+        expect(exec({composer: composerAdv({severity})}).code).toBe(0);
+    });
+
+    test('composer severity is case-insensitive', () => {
+        expect(exec({composer: composerAdv({severity: 'HIGH'})}).code).toBe(1);
+    });
+
+    test('composer finding is accepted via baseline by advisoryId when cve is null', () => {
+        const r = exec({composer: composerAdv({severity: 'high'}), bl: baseline([accept('PKSA-2', 'v/p')])});
+        expect(r.code).toBe(0);
+        expect(r.out).toContain('Accepted risks');
+    });
+
+    test('composer advisory entry that is not an object exits 3', () => {
+        const r = exec({composer: JSON.stringify({advisories: {'v/p': [null]}})});
+        expect(r.code).toBe(3);
+        expect(r.out).toContain('composer');
     });
 
     test('new finding plus failed second audit gives the highest code (3)', () => {

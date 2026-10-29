@@ -115,6 +115,9 @@ function parseComposerReport(raw) {
     const groups = Array.isArray(advisories) ? [advisories] : Object.values(advisories);
     for (const group of groups) {
         for (const adv of Array.isArray(group) ? group : Object.values(group || {})) {
+            if (adv === null || typeof adv !== 'object') {
+                throw new AuditFailure('composer', 'advisory entry is not an object', raw);
+            }
             const severity = typeof adv.severity === 'string' ? adv.severity.toLowerCase() : 'unknown';
             if (severity !== 'unknown' && !BLOCKING_SEVERITIES.has(severity)) {
                 continue;
