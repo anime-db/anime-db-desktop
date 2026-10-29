@@ -131,6 +131,36 @@ describe('security-audit', () => {
         expect(r.out).not.toContain('Blocking');
     });
 
+    test('node missing from package-lock.json is treated as shipped', () => {
+        const r = exec({npm: npmReport('foo', 'GHSA-nolock', ['node_modules/foo']), lockPackages: {}});
+        expect(r.code).toBe(1);
+        expect(r.out).toContain('GHSA-nolock');
+    });
+
+    test('npm finding with empty nodes is treated as shipped', () => {
+        const r = exec({npm: npmReport('foo', 'GHSA-empty', []), lockPackages: {}});
+        expect(r.code).toBe(1);
+        expect(r.out).toContain('GHSA-empty');
+    });
+
+    test('npm finding without a nodes key is treated as shipped', () => {
+        const report = JSON.parse(npmReport('foo', 'GHSA-nokey', []));
+        delete report.vulnerabilities.foo.nodes;
+        const r = exec({npm: JSON.stringify(report), lockPackages: {}});
+        expect(r.code).toBe(1);
+        expect(r.out).toContain('GHSA-nokey');
+    });
+
+    test('highest exit code wins: invalid baseline plus failed audit gives 3', () => {
+        const r = exec({bl: {accepted: 'nope', shipped_dev: BASE_SHIPPED}, npm: 'not json'});
+        expect(r.code).toBe(3);
+    });
+
+    test('highest exit code wins: invalid baseline plus failed composer audit gives 3', () => {
+        const r = exec({bl: {accepted: 'nope', shipped_dev: BASE_SHIPPED}, composer: 'not json'});
+        expect(r.code).toBe(3);
+    });
+
     test('finding with one dev node and one non-dev node blocks', () => {
         const r = exec({
             npm:          npmReport('foo', 'GHSA-mix', ['node_modules/foo', 'node_modules/a/node_modules/foo']),
