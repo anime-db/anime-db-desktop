@@ -13,7 +13,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Гейт перед релизом (issue #1172): релиз не публикуется с известной уязвимостью high/critical
+  # в npm/composer-зависимостях вне security-audit-baseline.json (или с истёкшим сроком), и при
+  # сбое самого аудита. Обходного флага нет: исключение — осознанная запись в baseline отдельным
+  # коммитом и новый тег. Поставляемые бинарники (scripts/versions.json) этот гейт не видит.
+  #
+  # Без npm ci, без cache: npm и без composer install: скрипт на встроенных модулях Node, аудит
+  # читает только lock-файлы. Без extensions: в setup-php — tests/scripts/
+  # build-workflow-extensions.test.js читает первое вхождение extensions: в этом файле.
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          tools: composer
+          coverage: none
+
+      - name: Audit dependencies
+        run: npm run security:audit
+
   build:
+    # Сборка на windows (минуты ×2) не стартует при красном аудите; publish ждёт build.
+    needs: audit
     runs-on: windows-latest
     # Здесь потолок важнее, чем в CI: джоба идёт на windows-latest, где минуты
     # тарифицируются с множителем ×2, и качает ~230 МБ бинарей с GitHub Releases. У
