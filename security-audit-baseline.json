@@ -1,0 +1,81 @@
+{
+    "accepted": [
+        {
+            "id": "GHSA-532v-xpq5-8h95",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        },
+        {
+            "id": "GHSA-8337-3p73-46f4",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        },
+        {
+            "id": "GHSA-jjp3-mq3x-295m",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        },
+        {
+            "id": "GHSA-9wfr-w7mm-pc7f",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        },
+        {
+            "id": "GHSA-v3j7-r9gq-3gjw",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        },
+        {
+            "id": "GHSA-h7rp-cf8h-j98x",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        },
+        {
+            "id": "GHSA-9f4c-93c8-jc8g",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        },
+        {
+            "id": "GHSA-hq2x-r82h-9wj4",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        },
+        {
+            "id": "GHSA-gr2m-v5gq-v685",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        },
+        {
+            "id": "GHSA-j84w-jfhq-vhvj",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        },
+        {
+            "id": "GHSA-9qh4-3jw8-366w",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        },
+        {
+            "id": "GHSA-jr5w-w6x2-84p9",
+            "package": "electron",
+            "reason": "Major Electron upgrade, separate task",
+            "expires": "2026-12-28"
+        }
+    ],
+    "shipped_dev": [
+        "electron",
+        "htmx.org",
+        "bootstrap"
+    ]
+}
