@@ -43,10 +43,18 @@ tags: [memory/repo, security]
   `will-redirect`), `setWindowOpenHandler` всегда возвращает `{ action: 'deny' }`.
 - `openExternal` пропускает только схемы `http:` и `https:`.
 - CSP выставляется из `native/content-security-policy.js` (`onHeadersReceived` на `defaultSession`).
-- Аргументы IPC-каналов проверяются в главном процессе, а не в рендерере. Пример — `shell:open-path`
-  (`openStoragePath` в `native/shell/index.js`): путь канонизируется и открывается, только если это
-  существующий каталог внутри настроенных хранилищ; список хранилищ главный процесс берёт у
-  backend сам, а не из аргумента.
+- В дочерние процессы аргументы IPC попадают только элементами массива `spawn` (`phpCommand.run`),
+  без shell.
+- `shell:open-path` проверяет путь в главном процессе (`openStoragePath` в `native/shell/index.js`):
+  путь канонизируется и открывается, только если это существующий каталог внутри настроенных
+  хранилищ; список хранилищ главный процесс берёт у backend сам, а не из аргумента.
+- `backup:restore-start` сводит `name` к `path.basename` внутри каталога бэкапов.
+- `catalog:export-start` (`destinationDir`), `catalog:import-start` (`archivePath`), `import-v1:start`
+  (`installationDir`) и `dialog:pick-file` (`filters`) передают аргументы дальше **без проверки в
+  главном процессе**. Это расхождение с желаемой моделью, а не защита: считать эти каналы
+  проверенными нельзя.
+- Инвариант: существующие проверки не ослабляются; у нового IPC-канала аргументы проверяются в
+  главном процессе, а не в рендерере.
 
 **Локальный сервер (`app/`)**
 - `bind 127.0.0.1` в обоих server-блоках `app/Caddyfile`.
