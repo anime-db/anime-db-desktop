@@ -230,7 +230,7 @@ FrankenPHP не даёт x32-сборку под Windows, а целевая ау
 
 ## Документация для разработчиков
 
-- [CLAUDE.md](CLAUDE.md) — краткая точка входа (команды, границы, workflow)
+- [AGENTS.md](AGENTS.md) — краткая точка входа (команды, границы, workflow)
 - [.claude-docs/index.md](.claude-docs/index.md) — таблица маршрутизации по докам
 - [.claude-docs/architecture.md](.claude-docs/architecture.md) — монорепо,
   граница native/app, FrankenPHP, Meilisearch, пути
